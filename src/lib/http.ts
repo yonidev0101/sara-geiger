@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { UserError } from './campaigns';
+import { DbConfigError } from './db';
 
 type Globals = { __hits?: Map<string, { n: number; reset: number }> };
 const g = globalThis as unknown as Globals;
@@ -36,6 +37,13 @@ export function handle(fn: () => Promise<unknown>) {
         return NextResponse.json({ error: err.message, ...err.extra }, { status: err.status });
       }
       console.error(err);
+      if (err instanceof DbConfigError) {
+        return NextResponse.json({ error: 'בסיס הנתונים לא מחובר לאתר (DATABASE_URL חסר).' }, { status: 503 });
+      }
+      const code = (err as { code?: string }).code;
+      if (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'ETIMEDOUT' || code === '28P01') {
+        return NextResponse.json({ error: 'אין חיבור לבסיס הנתונים. בדקו את /api/health.' }, { status: 503 });
+      }
       return NextResponse.json({ error: 'משהו השתבש. נסו שוב בעוד רגע.' }, { status: 500 });
     });
 }

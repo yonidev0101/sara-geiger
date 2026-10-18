@@ -62,30 +62,77 @@ create index if not exists dedications_campaign_idx on dedications (campaign_id)
 create index if not exists readings_campaign_idx on readings (campaign_id);
 `;
 
+type Globals2 = { __ssl?: boolean };
+const g2 = globalThis as unknown as Globals2;
+
+export class DbConfigError extends Error {}
+
+function wantsSsl(url: string): boolean {
+  if (process.env.PGSSL === 'true') return true;
+  if (process.env.PGSSL === 'false') return false;
+  // Railway's private network (*.railway.internal) and localhost need no SSL; public proxies usually do.
+  return !/\.railway\.internal|localhost|127\.0\.0\.1/.test(url);
+}
+
 export function pool(): Pool {
   if (!g.__pool) {
     const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) throw new Error('DATABASE_URL is not set');
+    if (!connectionString) {
+      throw new DbConfigError('DATABASE_URL is not set. Add a Postgres service and set DATABASE_URL=${{Postgres.DATABASE_URL}}.');
+    }
+    g2.__ssl ??= wantsSsl(connectionString);
     g.__pool = new Pool({
       connectionString,
       max: 10,
-      ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : undefined,
+      connectionTimeoutMillis: 10_000,
+      ssl: g2.__ssl ? { rejectUnauthorized: false } : undefined,
     });
+    g.__pool.on('error', (err) => console.error('[db] idle client error', err.message));
   }
   return g.__pool;
 }
 
+/** If the first connection fails because of SSL, flip the SSL setting once and retry. */
+async function resetPoolOnSslMismatch(err: unknown): Promise<boolean> {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!/ssl|encryption|pg_hba/i.test(msg) || process.env.PGSSL) return false;
+  console.warn(`[db] connection failed (${msg}); retrying with ssl=${!g2.__ssl}`);
+  const old = g.__pool;
+  g.__pool = undefined;
+  g2.__ssl = !g2.__ssl;
+  await old?.end().catch(() => {});
+  return true;
+}
+
 function ensureSchema(): Promise<void> {
   if (!g.__schema) {
-    g.__schema = pool()
-      .query(SCHEMA)
-      .then(() => undefined)
-      .catch((err) => {
-        g.__schema = undefined;
-        throw err;
-      });
+    g.__schema = (async () => {
+      try {
+        await pool().query(SCHEMA);
+      } catch (err) {
+        if (!(await resetPoolOnSslMismatch(err))) throw err;
+        await pool().query(SCHEMA);
+      }
+    })().catch((err) => {
+      g.__schema = undefined;
+      console.error('[db] could not connect or create tables:', err instanceof Error ? err.message : err);
+      throw err;
+    });
   }
   return g.__schema;
+}
+
+/** Checks the database and returns a short, secret-free reason when it is not reachable. */
+export async function dbHealth(): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    await ensureSchema();
+    await pool().query('select 1');
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: string }).code;
+    return { ok: false, reason: code ? `${code}: ${msg}` : msg };
+  }
 }
 
 export async function query<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {

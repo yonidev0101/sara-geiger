@@ -37,7 +37,7 @@ button { cursor: pointer; }
 
 .serif { font-family: var(--serif); }
 .container { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
-.narrow { max-width: 640px; margin: 0 auto; padding: 0 16px; }
+.narrow { max-width: 640px; margin: 0 auto; padding: 0 20px; }
 .eyebrow { font-size: 14px; letter-spacing: 0.06em; color: var(--gold-text); font-weight: 600; }
 .muted { color: var(--muted); }
 .rule { width: 56px; height: 1px; background: var(--gold); border: 0; margin: 8px 0; }
@@ -131,7 +131,7 @@ button { cursor: pointer; }
 /* Sheet */
 .backdrop { position: fixed; inset: 0; background: rgba(28, 38, 56, .45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; animation: fade .18s ease; }
 .sheet { width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; background: var(--paper); border-radius: 20px 20px 0 0; padding: 12px 20px calc(24px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 18px; animation: rise .22s ease; }
-@media (min-width: 700px) { .backdrop { align-items: center; } .sheet { border-radius: 16px; } }
+@media (min-width: 700px) { .backdrop { align-items: center; padding: 20px; } .sheet { border-radius: 16px; } }
 .sheet .handle { width: 40px; height: 4px; border-radius: 2px; background: #DDD3C0; align-self: center; }
 .sheet h2 { margin: 0; font-family: var(--serif); font-size: 26px; font-weight: 500; }
 @keyframes rise { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -162,7 +162,7 @@ textarea.input { padding: 12px 14px; min-height: 90px; }
 .mine-item .actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Home */
-.hero { display: flex; flex-wrap: wrap; gap: 48px; align-items: center; padding: 72px 0 56px; }
+.hero { display: flex; flex-wrap: wrap; gap: 48px; align-items: center; padding-top: 72px; padding-bottom: 56px; }
 .hero .text { flex: 999 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .hero h1 { margin: 0; font-family: var(--serif); font-size: clamp(44px, 8vw, 76px); font-weight: 500; line-height: 1.05; }
 .hero .photo { flex: 1 1 280px; display: flex; justify-content: center; }
@@ -172,7 +172,7 @@ textarea.input { padding: 12px 14px; min-height: 90px; }
 .stats .inner { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 28px; padding: 40px 20px; text-align: center; }
 .stats .num { font-family: var(--serif); font-size: 48px; font-weight: 500; color: #E3C98F; line-height: 1.1; }
 .stats .lbl { font-size: 15px; color: #C9CFDA; }
-.section { padding: 64px 0 24px; }
+.section { padding-top: 64px; padding-bottom: 24px; }
 .section h2 { margin: 0 0 24px; font-family: var(--serif); font-size: 36px; font-weight: 500; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
 .campaign-card { display: flex; flex-direction: column; gap: 14px; transition: border-color .15s; }
