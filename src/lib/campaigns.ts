@@ -4,12 +4,15 @@ import { buildUnits, kindLabel, type Kind } from './divisions';
 import { newSlug, newToken } from './ids';
 import { publish } from './events';
 import type {
+  ActivityItem,
   AdminState,
   CampaignState,
   CampaignSummary,
   Counts,
   DedicationKind,
+  MyUnit,
   PublicCampaign,
+  ReaderUnit,
   UnitStatus,
 } from './types';
 
@@ -33,6 +36,7 @@ interface CampaignRow {
   round: number;
   completed_rounds: number;
   status: 'active' | 'closed';
+  release_days: number | null;
 }
 
 interface UnitRow {
@@ -51,7 +55,7 @@ interface UnitRow {
 }
 
 const CAMPAIGN_COLS = `id, slug, admin_token, title, kind, split119, opener_name,
-  to_char(deadline, 'YYYY-MM-DD') as deadline, is_public, auto_renew, round, completed_rounds, status`;
+  to_char(deadline, 'YYYY-MM-DD') as deadline, is_public, auto_renew, round, completed_rounds, status, release_days`;
 
 export const MAX_TAKE = 30;
 
@@ -78,6 +82,7 @@ function toPublic(c: CampaignRow): PublicCampaign {
     status: c.status,
     isPublic: c.is_public,
     autoRenew: c.auto_renew,
+    releaseDays: c.release_days,
   };
 }
 
@@ -96,6 +101,29 @@ async function findCampaign(slug: string, client?: PoolClient, lock = false): Pr
 
 function assertActive(c: CampaignRow) {
   if (c.status !== 'active') throw new UserError('החלוקה הזאת סגורה');
+}
+
+type Db = Pick<PoolClient, 'query'>;
+
+async function logActivity(db: Db, campaignId: number, kind: ActivityItem['kind'], name: string | null, device: string | null, count: number) {
+  await db.query('insert into activity (campaign_id, kind, name, device, count) values ($1, $2, $3, $4, $5)', [
+    campaignId,
+    kind,
+    name,
+    device,
+    count,
+  ]);
+}
+
+/** Frees units that were taken more than `release_days` days ago and never marked as read. */
+async function releaseStale(c: CampaignRow): Promise<boolean> {
+  if (!c.release_days || c.status !== 'active') return false;
+  const res = await query(
+    `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null
+     where campaign_id = $1 and status = 'taken' and taken_at < now() - make_interval(days => $2) returning id`,
+    [c.id, c.release_days],
+  );
+  return res.length > 0;
 }
 
 async function addDedication(client: PoolClient, campaignId: number, kind: unknown, name: unknown) {
@@ -171,6 +199,7 @@ async function loadUnits(campaignId: number): Promise<UnitRow[]> {
 export async function getState(slug: string, device: unknown): Promise<CampaignState> {
   const c = await findCampaign(slug);
   const dev = cleanDevice(device);
+  if (await releaseStale(c)) await publish({ slug, type: 'update' });
   const units = await loadUnits(c.id);
   const dedications = await query<{ kind: DedicationKind; name: string }>(
     `select kind, name from (
@@ -179,8 +208,18 @@ export async function getState(slug: string, device: unknown): Promise<CampaignS
      ) d order by created_at`,
     [c.id],
   );
+  const activity = await query<{ kind: ActivityItem['kind']; name: string | null; count: number; at: Date }>(
+    'select kind, name, count, created_at as at from activity where campaign_id = $1 order by created_at desc limit 8',
+    [c.id],
+  );
+  const [{ participants }] = await query<{ participants: number }>(
+    'select count(distinct device)::int as participants from activity where campaign_id = $1 and device is not null',
+    [c.id],
+  );
   return {
     campaign: toPublic(c),
+    activity: activity.map((a) => ({ kind: a.kind, name: a.name, count: a.count, at: a.at.toISOString() })),
+    participants,
     units: units.map((u) => ({
       id: u.id,
       idx: u.idx,
@@ -205,12 +244,15 @@ export async function listPublicCampaigns(limit = 12): Promise<CampaignSummary[]
     kind: Kind;
     opener_name: string | null;
     round: number;
+    deadline: string | null;
+    participants: number;
     free: number;
     taken: number;
     read: number;
     total: number;
   }>(
-    `select c.slug, c.title, c.kind, c.opener_name, c.round,
+    `select c.slug, c.title, c.kind, c.opener_name, c.round, to_char(c.deadline, 'YYYY-MM-DD') as deadline,
+       (select count(distinct device) from activity a where a.campaign_id = c.id and a.device is not null)::int as participants,
        count(*) filter (where u.status = 'free')::int as free,
        count(*) filter (where u.status = 'taken')::int as taken,
        count(*) filter (where u.status = 'read')::int as read,
@@ -228,6 +270,8 @@ export async function listPublicCampaigns(limit = 12): Promise<CampaignSummary[]
     kindLabel: kindLabel(r.kind),
     openerName: r.opener_name,
     round: r.round,
+    deadline: r.deadline,
+    participants: r.participants,
     counts: { free: r.free, taken: r.taken, read: r.read, total: r.total },
   }));
 }
@@ -266,6 +310,13 @@ export async function takeUnits(slug: string, input: TakeInput): Promise<{ taken
   const result = await tx(async (client) => {
     const c = await findCampaign(slug, client);
     assertActive(c);
+    if (c.release_days) {
+      await client.query(
+        `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null
+         where campaign_id = $1 and status = 'taken' and taken_at < now() - make_interval(days => $2)`,
+        [c.id, c.release_days],
+      );
+    }
     let ids: number[];
     if (Array.isArray(input.unitIds)) {
       ids = [...new Set(input.unitIds.filter((x): x is number => Number.isInteger(x)))];
@@ -296,6 +347,7 @@ export async function takeUnits(slug: string, input: TakeInput): Promise<{ taken
       [name, device, ids],
     );
     await addDedication(client, c.id, input.dedicationKind, input.dedicationName);
+    await logActivity(client, c.id, 'take', name, device, ids.length);
     return { taken: ids };
   });
   await publish({ slug, type: 'update' });
@@ -323,6 +375,10 @@ export async function markRead(
        returning idx, taker_name, taker_device`,
       opts.admin ? [c.id, ids] : [c.id, ids, dev],
     );
+    if (updated.rowCount) {
+      const first = updated.rows[0];
+      await logActivity(client, c.id, 'read', first.taker_name, first.taker_device, updated.rowCount);
+    }
     for (const r of updated.rows) {
       await client.query(
         'insert into readings (campaign_id, unit_idx, round, reader_name, reader_device) values ($1, $2, $3, $4, $5)',
@@ -332,6 +388,7 @@ export async function markRead(
     const left = await client.query(`select count(*)::int as n from units where campaign_id = $1 and status <> 'read'`, [c.id]);
     if (left.rows[0].n === 0) {
       await client.query('update campaigns set completed_rounds = completed_rounds + 1 where id = $1', [c.id]);
+      await logActivity(client, c.id, 'complete', null, null, c.completed_rounds + 1);
       if (c.auto_renew) await startNewRound(client, c.id);
       return { completed: true, round: c.auto_renew ? c.round + 1 : c.round };
     }
@@ -402,6 +459,7 @@ export interface AdminInput {
   deadline?: unknown;
   isPublic?: unknown;
   autoRenew?: unknown;
+  releaseDays?: unknown;
 }
 
 export async function adminAction(slug: string, input: AdminInput): Promise<void> {
@@ -439,17 +497,71 @@ export async function adminAction(slug: string, input: AdminInput): Promise<void
       const title = clean(input.title, 80) ?? c.title;
       const deadline =
         typeof input.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.deadline) ? input.deadline : null;
-      await query('update campaigns set title = $1, deadline = $2, is_public = $3, auto_renew = $4 where id = $5', [
-        title,
-        deadline,
-        input.isPublic !== false,
-        input.autoRenew !== false,
-        c.id,
-      ]);
+      const days = Number(input.releaseDays);
+      const releaseDays = Number.isInteger(days) && days > 0 && days <= 60 ? days : null;
+      await query(
+        'update campaigns set title = $1, deadline = $2, is_public = $3, auto_renew = $4, release_days = $5 where id = $6',
+        [title, deadline, input.isPublic !== false, input.autoRenew !== false, releaseDays, c.id],
+      );
       break;
     }
     default:
       throw new UserError('פעולה לא מוכרת');
   }
   await publish({ slug, type: 'update' });
+}
+
+// ---------------------------------------------------------------- reader and "my chapters"
+
+export async function getReaderUnit(slug: string, unitId: number, device: unknown): Promise<ReaderUnit> {
+  const c = await findCampaign(slug);
+  const dev = cleanDevice(device);
+  const [u] = await query<UnitRow>(
+    `select id, idx, label, sublabel, detail, group_label, ref, status, taker_name, taker_device, taken_at, read_at
+     from units where campaign_id = $1 and id = $2`,
+    [c.id, unitId],
+  );
+  if (!u) throw new UserError('החלק לא נמצא', 404);
+  return {
+    id: u.id,
+    detail: u.detail,
+    ref: u.ref,
+    status: u.status,
+    mine: !!dev && u.status !== 'free' && u.taker_device === dev,
+    campaignSlug: c.slug,
+    campaignTitle: c.title,
+    campaignActive: c.status === 'active',
+  };
+}
+
+export async function getMyUnits(device: unknown): Promise<MyUnit[]> {
+  const dev = cleanDevice(device);
+  if (!dev) return [];
+  const rows = await query<{
+    id: number;
+    label: string;
+    sublabel: string | null;
+    detail: string;
+    status: 'taken' | 'read';
+    slug: string;
+    title: string;
+    cstatus: string;
+  }>(
+    `select u.id, u.label, u.sublabel, u.detail, u.status, c.slug, c.title, c.status as cstatus
+     from units u join campaigns c on c.id = u.campaign_id
+     where u.taker_device = $1 and u.status in ('taken', 'read')
+     order by (u.status = 'read'), c.created_at desc, u.idx
+     limit 300`,
+    [dev],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    label: r.label,
+    sublabel: r.sublabel,
+    detail: r.detail,
+    status: r.status,
+    campaignSlug: r.slug,
+    campaignTitle: r.title,
+    campaignActive: r.cstatus === 'active',
+  }));
 }

@@ -57,6 +57,20 @@ create table if not exists readings (
   created_at timestamptz not null default now()
 );
 
+create table if not exists activity (
+  id serial primary key,
+  campaign_id int not null references campaigns(id) on delete cascade,
+  kind text not null,
+  name text,
+  device text,
+  count int not null default 1,
+  created_at timestamptz not null default now()
+);
+
+alter table campaigns add column if not exists release_days int;
+
+create index if not exists activity_campaign_idx on activity (campaign_id, created_at desc);
+create index if not exists units_device_idx on units (taker_device);
 create index if not exists units_campaign_idx on units (campaign_id, idx);
 create index if not exists dedications_campaign_idx on dedications (campaign_id);
 create index if not exists readings_campaign_idx on readings (campaign_id);

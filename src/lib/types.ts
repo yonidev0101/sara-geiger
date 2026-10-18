@@ -34,6 +34,7 @@ export interface PublicCampaign {
   status: 'active' | 'closed';
   isPublic: boolean;
   autoRenew: boolean;
+  releaseDays: number | null;
 }
 
 export interface Counts {
@@ -43,11 +44,20 @@ export interface Counts {
   total: number;
 }
 
+export interface ActivityItem {
+  kind: 'take' | 'read' | 'complete';
+  name: string | null;
+  count: number;
+  at: string;
+}
+
 export interface CampaignState {
   campaign: PublicCampaign;
   units: PublicUnit[];
   dedications: { kind: DedicationKind; name: string }[];
   counts: Counts;
+  activity: ActivityItem[];
+  participants: number;
 }
 
 export interface AdminUnit extends PublicUnit {
@@ -66,5 +76,29 @@ export interface CampaignSummary {
   kindLabel: string;
   openerName: string | null;
   round: number;
+  deadline: string | null;
+  participants: number;
   counts: Counts;
+}
+
+export interface MyUnit {
+  id: number;
+  label: string;
+  sublabel: string | null;
+  detail: string;
+  status: 'taken' | 'read';
+  campaignSlug: string;
+  campaignTitle: string;
+  campaignActive: boolean;
+}
+
+export interface ReaderUnit {
+  id: number;
+  detail: string;
+  ref: string;
+  status: UnitStatus;
+  mine: boolean;
+  campaignSlug: string;
+  campaignTitle: string;
+  campaignActive: boolean;
 }

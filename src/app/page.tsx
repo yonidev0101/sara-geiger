@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { SiteFooter, SiteHeader } from '@/components/SiteHeader';
 import { getStats, listPublicCampaigns } from '@/lib/campaigns';
+import { hebrewDate } from '@/lib/hebrew';
 import { site } from '@/lib/site';
 import type { CampaignSummary } from '@/lib/types';
 
@@ -44,6 +45,7 @@ export default async function Home() {
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
               <Link href="#campaigns" className="btn">להצטרף לחלוקה</Link>
               <Link href="/new" className="btn btn-outline">לפתוח חלוקה חדשה</Link>
+              <Link href="/tehillim" className="btn btn-ghost">לקריאה חופשית</Link>
             </div>
           </div>
           <div className="photo">
@@ -107,7 +109,7 @@ export default async function Home() {
             <div className="step">
               <div className="n">ג׳</div>
               <div className="t">קוראים ומסיימים יחד</div>
-              <p>פותחים את הפרק, קוראים ומסמנים ״קראתי״. כשהספר מושלם, מתחיל סבב חדש מעצמו.</p>
+              <p>קוראים את הפרק כאן באתר, בגופן נוח ובגודל שמתאים לכם, ומסמנים ״קראתי״. כשהספר מושלם, מתחיל סבב חדש מעצמו.</p>
             </div>
           </div>
         </section>
@@ -126,16 +128,17 @@ function CampaignCard({ c }: { c: CampaignSummary }) {
         <div className="serif" style={{ fontSize: 23, fontWeight: 500, lineHeight: 1.25 }}>{c.title}</div>
         <span className="chip">{c.kindLabel}</span>
       </div>
-      <div className="muted" style={{ fontSize: 14 }}>
-        סבב {c.round}
-        {c.openerName ? ` · נפתח ע״י ${c.openerName}` : ''} · {c.counts.free} פנויים
+      <div className="meta">
+        {c.openerName && <span>נפתח ע״י {c.openerName}</span>}
+        {c.deadline && <span>עד {hebrewDate(c.deadline)}</span>}
+        <span>{c.participants} משתתפים</span>
       </div>
       <div className="progress" aria-hidden="true">
         <div className="read" style={{ width: `${readPct}%` }} />
         <div className="taken" style={{ width: `${takenPct}%` }} />
       </div>
       <div className="row-between" style={{ fontSize: 14 }}>
-        <span><b>{Math.round(readPct)}%</b> נקרא</span>
+        <span><b>{Math.round(readPct)}%</b> נקרא · {c.counts.free} פנויים</span>
         <span style={{ color: 'var(--gold-text)', fontWeight: 600 }}>להצטרפות ←</span>
       </div>
     </Link>

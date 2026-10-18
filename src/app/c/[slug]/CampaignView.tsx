@@ -1,21 +1,32 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SiteHeader } from '@/components/SiteHeader';
 import { BookIcon, CheckIcon, ShareIcon } from '@/components/Icons';
-import { api, ApiError, getDeviceId, remember, shareLink, subscribeLive } from '@/components/client';
-import { sefariaUrl } from '@/lib/divisions';
+import { LogoMark } from '@/components/Logo';
+import { api, ApiError, getDeviceId, remember, shareLink, subscribeLive, timeAgo } from '@/components/client';
+import { hebNum, hebrewDate } from '@/lib/hebrew';
 import { site } from '@/lib/site';
-import { DEDICATION_LABELS, type CampaignState, type DedicationKind, type PublicUnit } from '@/lib/types';
+import {
+  DEDICATION_LABELS,
+  type ActivityItem,
+  type CampaignState,
+  type DedicationKind,
+  type PublicUnit,
+} from '@/lib/types';
 
 type Filter = 'all' | 'free' | 'mine';
+type SheetState = null | { mode: 'pick' } | { mode: 'auto' } | { mode: 'unit'; unit: PublicUnit };
 
 export function CampaignView({ slug, initial }: { slug: string; initial: CampaignState }) {
   const [state, setState] = useState(initial);
   const [selected, setSelected] = useState<number[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
-  const [sheet, setSheet] = useState<null | { mode: 'pick' } | { mode: 'auto' } | { mode: 'unit'; unit: PublicUnit }>(null);
+  const [sheet, setSheet] = useState<SheetState>(null);
   const [toast, setToast] = useState('');
+  const [celebrate, setCelebrate] = useState(false);
+  const [flashId, setFlashId] = useState<number | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetching = useRef<Promise<void> | null>(null);
 
@@ -45,20 +56,21 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
   useEffect(() => {
     void refresh();
     return subscribeLive(slug, (evt) => {
-      if (evt.type === 'completed') showToast('הספר הושלם! תודה לכל המשתתפים. סבב חדש התחיל.');
+      if (evt.type === 'completed') setCelebrate(true);
       void refresh();
     });
-  }, [slug, refresh, showToast]);
+  }, [slug, refresh]);
 
   const { campaign, units, counts, dedications } = state;
   const isChapters = campaign.kind === 'chapters';
-  const unitWord = isChapters ? 'פרקים' : 'חלקים';
+  const one = isChapters ? 'פרק' : 'חלק';
+  const many = isChapters ? 'פרקים' : 'חלקים';
   const active = campaign.status === 'active';
-  const mine = units.filter((u) => u.mine && u.status === 'taken');
-  const mineRead = units.filter((u) => u.mine && u.status === 'read');
+  const mineOpen = units.filter((u) => u.mine && u.status === 'taken');
+  const mineAll = units.filter((u) => u.mine);
 
   const groups = useMemo(() => {
-    const visible = units.filter((u) => (filter === 'free' ? u.status === 'free' : filter === 'mine' ? u.mine : true));
+    const visible = units.filter((u) => (filter === 'free' ? u.status === 'free' : true));
     const map = new Map<string, PublicUnit[]>();
     for (const u of visible) {
       if (!map.has(u.group)) map.set(u.group, []);
@@ -74,17 +86,21 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
     } else if (u.mine) {
       setSheet({ mode: 'unit', unit: u });
     } else if (u.status === 'taken') {
-      showToast(`${u.detail} · נלקח ע״י ${u.takerName ?? 'משתתף'}`);
+      showToast(`${u.detail} נלקח ע״י ${u.takerName ?? 'משתתף'}`);
     } else {
-      showToast(`${u.detail} · נקרא${u.takerName ? ` ע״י ${u.takerName}` : ''}`);
+      showToast(`${u.detail} כבר נקרא${u.takerName ? ` ע״י ${u.takerName}` : ''}`);
     }
   }
 
   async function act(action: 'read' | 'release', unitIds: number[]) {
     try {
       const res = await api<{ completed?: boolean }>(`/api/c/${slug}/actions`, { action, unitIds, device: getDeviceId() });
-      if (action === 'read') showToast(res.completed ? 'הספר הושלם! תודה רבה.' : 'תודה! סומן כנקרא.');
-      else showToast('הפרק שוחרר וחזר להיות פנוי');
+      if (action === 'read') {
+        if (res.completed) setCelebrate(true);
+        else showToast(unitIds.length > 1 ? 'תודה! כולם סומנו כנקראו.' : 'תודה! סומן כנקרא.');
+      } else {
+        showToast(`ה${one} שוחרר וחזר לרשימה`);
+      }
       setSheet(null);
       await refresh();
     } catch (err) {
@@ -92,59 +108,84 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
     }
   }
 
+  function jumpTo(chapter: number) {
+    const target = units.find((u) => u.ref === `Psalms.${chapter}` || u.ref.startsWith(`Psalms.${chapter}.`));
+    if (!target) return showToast('לא נמצא פרק כזה');
+    setFilter('all');
+    requestAnimationFrame(() => {
+      document.getElementById(`u-${target.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setFlashId(target.id);
+      setTimeout(() => setFlashId(null), 1600);
+    });
+  }
+
   const readPct = counts.total ? (counts.read / counts.total) * 100 : 0;
   const takenPct = counts.total ? (counts.taken / counts.total) * 100 : 0;
-  const share = () => shareLink(window.location.href, `${campaign.title} · חלוקת תהילים לעילוי נשמת ${site.honoree} ז״ל`);
+  const shareText = `${campaign.title}\nחלוקת תהילים לעילוי נשמת ${site.honoree} ז״ל.\n${
+    counts.free ? `נשארו ${counts.free} ${many} פנויים. בחרו ${one} והצטרפו:` : 'כל החלקים נלקחו. תודה לכולם!'
+  }`;
+  const share = () => shareLink(window.location.href.split('?')[0], shareText);
   const selectedUnits = units.filter((u) => selected.includes(u.id));
 
   return (
     <>
       <SiteHeader>
-        <button className="icon-btn" onClick={share} aria-label="שיתוף החלוקה">
-          <ShareIcon />
-        </button>
+        <nav className="nav" aria-label="ניווט">
+          <Link href="/mine">הפרקים שלי</Link>
+          <button className="icon-btn" onClick={share} aria-label="שיתוף החלוקה">
+            <ShareIcon />
+          </button>
+        </nav>
       </SiteHeader>
 
       <main className="narrow">
-        <div className="memorial">
+        <div className="memorial compact">
           <div className="eyebrow">לעילוי נשמת</div>
           <h1 className="name">{site.honoree} ז״ל</h1>
-          <hr className="rule" />
           {site.passingDateHebrew && <div className="muted" style={{ fontSize: 14 }}>{site.passingDateHebrew} · תנצב״ה</div>}
         </div>
 
-        <section className="card stack" aria-label="פרטי החלוקה">
-          <div className="row-between" style={{ alignItems: 'flex-start' }}>
-            <div>
-              <h2 className="serif" style={{ margin: 0, fontSize: 23, fontWeight: 500 }}>{campaign.title}</h2>
-              <div className="muted" style={{ fontSize: 13 }}>
-                סבב {campaign.round}
-                {campaign.openerName ? ` · נפתח ע״י ${campaign.openerName}` : ''}
-                {campaign.deadline ? ` · עד ${new Date(campaign.deadline).toLocaleDateString('he-IL')}` : ''}
-                {campaign.completedRounds ? ` · הושלם ${campaign.completedRounds} פעמים` : ''}
+        <section className="card stack campaign-head" aria-label="פרטי החלוקה">
+          <div className="row-between" style={{ alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <h2 className="serif campaign-title">{campaign.title}</h2>
+              <div className="meta">
+                <span>סבב {hebNum(campaign.round)}</span>
+                {campaign.openerName && <span>נפתח ע״י {campaign.openerName}</span>}
+                {campaign.deadline && <span>עד {hebrewDate(campaign.deadline)}</span>}
               </div>
             </div>
             <span className="chip">{campaign.kindLabel}</span>
           </div>
+
           <div className="stack" style={{ gap: 8 }}>
             <div className="progress" role="img" aria-label={`${counts.read} נקראו, ${counts.taken} בקריאה, ${counts.free} פנויים`}>
               <div className="read" style={{ width: `${readPct}%` }} />
               <div className="taken" style={{ width: `${takenPct}%` }} />
             </div>
-            <div className="counts">
-              <span><b>{counts.read}</b> נקראו</span>
-              <span><b>{counts.taken}</b> בקריאה</span>
-              <span><b>{counts.free}</b> פנויים</span>
+            <div className="stat-row">
+              <div><b>{counts.read}</b><span>נקראו</span></div>
+              <div><b>{counts.taken}</b><span>בקריאה</span></div>
+              <div><b>{counts.free}</b><span>פנויים</span></div>
+              <div><b>{state.participants}</b><span>משתתפים</span></div>
             </div>
           </div>
+
+          {campaign.completedRounds > 0 && (
+            <div className="completed-note">
+              <LogoMark size={22} stroke={4} />
+              <span>הספר הושלם בחלוקה הזאת {campaign.completedRounds === 1 ? 'פעם אחת' : `${campaign.completedRounds} פעמים`}</span>
+            </div>
+          )}
+
           {dedications.length > 0 && (
-            <div style={{ borderTop: '1px solid var(--track)', paddingTop: 12 }} className="stack">
+            <div className="dedications">
               {(Object.keys(DEDICATION_LABELS) as DedicationKind[]).map((k) => {
                 const names = dedications.filter((d) => d.kind === k).map((d) => d.name);
                 if (!names.length) return null;
                 return (
                   <div key={k}>
-                    <div className="muted" style={{ fontSize: 12 }}>{k === 'ilui' ? 'בנוסף לעילוי נשמת' : DEDICATION_LABELS[k]}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{k === 'ilui' ? 'בנוסף, לעילוי נשמת' : DEDICATION_LABELS[k]}</div>
                     <div className="serif" style={{ fontSize: 16, lineHeight: 1.6 }}>{names.join(' · ')}</div>
                   </div>
                 );
@@ -153,48 +194,64 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
           )}
         </section>
 
-        {!active && <div className="banner" style={{ marginTop: 16 }}>החלוקה הזאת סגורה כרגע לבחירת פרקים.</div>}
+        {!active && <div className="banner" style={{ marginTop: 16 }}>החלוקה סגורה כרגע לבחירת {many}.</div>}
 
-        {(mine.length > 0 || mineRead.length > 0) && filter !== 'mine' && (
-          <button className="banner" style={{ marginTop: 16, width: '100%', textAlign: 'right', border: '1px solid var(--sand)' }}
-            onClick={() => setFilter('mine')}>
-            {mine.length > 0 ? `יש לך ${mine.length} ${unitWord} לקריאה. לחצו כאן כדי לראות אותם.` : `קראת ${mineRead.length} ${unitWord}. תודה!`}
-          </button>
+        {mineOpen.length > 0 && filter !== 'mine' && (
+          <section className="my-next" aria-label="הבא בתור לקריאה">
+            <div>
+              <div className="muted" style={{ fontSize: 13 }}>מחכים לך {mineOpen.length === 1 ? `${one} אחד` : `${mineOpen.length} ${many}`}</div>
+              <div className="serif" style={{ fontSize: 19 }}>{mineOpen[0].detail}</div>
+            </div>
+            <Link className="btn btn-small" href={`/c/${slug}/read/${mineOpen[0].id}`}>
+              <BookIcon /> לקריאה
+            </Link>
+          </section>
         )}
 
-        <section style={{ paddingTop: 24 }} aria-label={`${unitWord} תהילים`}>
-          <div className="row-between">
-            <h2 className="serif" style={{ margin: 0, fontSize: 22, fontWeight: 500 }}>{isChapters ? 'פרקי תהילים' : 'חלקי החלוקה'}</h2>
-            {active && <span className="muted" style={{ fontSize: 13 }}>הקישו על {isChapters ? 'פרק' : 'חלק'} פנוי</span>}
-          </div>
-          <div className="tabs" style={{ margin: '12px 0' }}>
-            <button className="tab" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>הכל</button>
-            <button className="tab" aria-pressed={filter === 'free'} onClick={() => setFilter('free')}>פנויים ({counts.free})</button>
-            <button className="tab" aria-pressed={filter === 'mine'} onClick={() => setFilter('mine')}>שלי ({mine.length + mineRead.length})</button>
-          </div>
-          <div className="legend">
-            <span><i className="swatch" style={{ background: 'var(--paper)', border: '1px solid var(--line-strong)' }} />פנוי</span>
-            <span><i className="swatch" style={{ background: 'var(--sand)' }} />נלקח</span>
-            <span><i className="swatch" style={{ background: 'var(--ink)' }} />נקרא</span>
-            <span><i className="swatch" style={{ background: 'var(--paper)', boxShadow: 'inset 0 0 0 2px var(--gold)' }} />שלי</span>
+        {mineAll.length === 0 && active && counts.free > 0 && (
+          <ol className="how-strip" aria-label="איך משתתפים">
+            <li><b>א׳</b> בוחרים {one} פנוי</li>
+            <li><b>ב׳</b> קוראים כאן באתר</li>
+            <li><b>ג׳</b> מסמנים ״קראתי״</li>
+          </ol>
+        )}
+
+        <section style={{ paddingTop: 20 }} aria-label={`${many} תהילים`}>
+          <div className="toolbar">
+            <div className="tabs" role="group" aria-label="סינון">
+              <button className="tab" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>הכל</button>
+              <button className="tab" aria-pressed={filter === 'free'} onClick={() => setFilter('free')}>פנויים · {counts.free}</button>
+              <button className="tab" aria-pressed={filter === 'mine'} onClick={() => setFilter('mine')}>שלי · {mineAll.length}</button>
+            </div>
+            {isChapters && filter !== 'mine' && <JumpBox onJump={jumpTo} />}
           </div>
 
+          {filter !== 'mine' && (
+            <div className="legend">
+              <span><i className="swatch" style={{ background: 'var(--paper)', border: '1px solid var(--line-strong)' }} />פנוי</span>
+              <span><i className="swatch" style={{ background: 'var(--sand)' }} />נלקח</span>
+              <span><i className="swatch" style={{ background: 'var(--ink)' }} />נקרא</span>
+              <span><i className="swatch" style={{ background: 'var(--paper)', boxShadow: 'inset 0 0 0 2px var(--gold)' }} />שלי</span>
+            </div>
+          )}
+
           {filter === 'mine' ? (
-            <MineList units={units.filter((u) => u.mine)} onRead={(id) => act('read', [id])} onRelease={(id) => act('release', [id])}
-              onReadAll={() => act('read', mine.map((u) => u.id))} active={active} />
+            <MineList slug={slug} units={mineAll} active={active} one={one}
+              onRead={(id) => act('read', [id])} onRelease={(id) => act('release', [id])}
+              onReadAll={() => act('read', mineOpen.map((u) => u.id))} />
           ) : groups.length === 0 ? (
-            <div className="empty" style={{ marginTop: 16 }}>אין כרגע {unitWord} פנויים.</div>
+            <div className="empty" style={{ marginTop: 16 }}>אין כרגע {many} פנויים.</div>
           ) : (
             groups.map(([group, list]) => (
               <div key={group}>
                 <div className="group-title">
                   <span>{group}</span>
                   <span className="line" />
-                  {isChapters && <span className="range">{list[0].label}–{list[list.length - 1].label}</span>}
+                  {isChapters && <span className="range">{list.filter((u) => !u.sublabel).at(0)?.label}–{list.filter((u) => !u.sublabel).at(-1)?.label}</span>}
                 </div>
                 <div className={isChapters ? 'grid' : 'part-list'}>
                   {list.map((u) => (
-                    <UnitButton key={u.id} u={u} compact={isChapters} selected={selected.includes(u.id)} onClick={() => onUnit(u)} />
+                    <UnitButton key={u.id} u={u} compact={isChapters} selected={selected.includes(u.id)} flash={flashId === u.id} onClick={() => onUnit(u)} />
                   ))}
                 </div>
               </div>
@@ -202,21 +259,23 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
           )}
         </section>
 
+        {state.activity.length > 0 && <ActivityFeed items={state.activity} many={many} one={one} />}
+
         {active && (
           <div className="action-bar">
             {selected.length > 0 ? (
               <div className="row">
                 <button className="btn grow" onClick={() => setSheet({ mode: 'pick' })}>
-                  לקחת {selected.length} {selected.length === 1 ? (isChapters ? 'פרק' : 'חלק') : unitWord}
+                  המשך עם {selected.length === 1 ? `${one} אחד` : `${selected.length} ${many}`}
                 </button>
                 <button className="btn btn-outline" onClick={() => setSelected([])}>ניקוי</button>
               </div>
             ) : (
               <div className="row">
                 <button className="btn grow" onClick={() => setSheet({ mode: 'auto' })} disabled={counts.free === 0}>
-                  {counts.free === 0 ? `כל ה${unitWord} נלקחו` : `תנו לי ${unitWord}`}
+                  {counts.free === 0 ? `כל ה${many} נלקחו` : `בחרו לי ${many}`}
                 </button>
-                <button className="btn btn-outline" onClick={share}>שיתוף</button>
+                <button className="btn btn-outline" onClick={share}><ShareIcon /> שיתוף</button>
               </div>
             )}
           </div>
@@ -225,79 +284,112 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
       </main>
 
       {sheet?.mode === 'pick' && (
-        <TakeSheet slug={slug} units={selectedUnits} unitWord={unitWord} onClose={() => setSheet(null)}
-          onDone={async (msg) => { setSelected([]); setSheet(null); showToast(msg); setFilter('mine'); await refresh(); }}
+        <TakeSheet slug={slug} units={selectedUnits} one={one} many={many} onClose={() => setSheet(null)}
+          onDone={async (ids) => { setSelected([]); setSheet(null); await refresh(); afterTake(ids); }}
           onConflict={async (msg) => { showToast(msg); await refresh(); }} />
       )}
       {sheet?.mode === 'auto' && (
-        <TakeSheet slug={slug} auto maxFree={counts.free} unitWord={unitWord} onClose={() => setSheet(null)}
-          onDone={async (msg) => { setSheet(null); showToast(msg); setFilter('mine'); await refresh(); }}
+        <TakeSheet slug={slug} auto maxFree={counts.free} one={one} many={many} onClose={() => setSheet(null)}
+          onDone={async (ids) => { setSheet(null); await refresh(); afterTake(ids); }}
           onConflict={async (msg) => { showToast(msg); await refresh(); }} />
       )}
       {sheet?.mode === 'unit' && (
-        <UnitSheet unit={sheet.unit} onClose={() => setSheet(null)} onRead={() => act('read', [sheet.unit.id])}
-          onRelease={() => act('release', [sheet.unit.id])} active={active} />
+        <UnitSheet slug={slug} unit={sheet.unit} onClose={() => setSheet(null)} onRead={() => act('read', [sheet.unit.id])}
+          onRelease={() => act('release', [sheet.unit.id])} active={active} one={one} />
       )}
+      {celebrate && <Celebration books={state.campaign.completedRounds} onClose={() => setCelebrate(false)} onShare={share} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );
+
+  function afterTake(ids: number[]) {
+    showToast(ids.length === 1 ? `ה${one} שלך! קריאה נעימה.` : `${ids.length} ${many} נשמרו על שמך. קריאה נעימה!`);
+    setFilter('mine');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 }
 
-function UnitButton({ u, compact, selected, onClick }: { u: PublicUnit; compact: boolean; selected: boolean; onClick: () => void }) {
+function JumpBox({ onJump }: { onJump: (chapter: number) => void }) {
+  const [value, setValue] = useState('');
+  return (
+    <form className="jump" onSubmit={(e) => { e.preventDefault(); const n = Number(value); if (n >= 1 && n <= 150) { onJump(n); setValue(''); } }}>
+      <label htmlFor="jump" className="sr-only">מעבר לפרק</label>
+      <input id="jump" className="jump-input" inputMode="numeric" pattern="[0-9]*" maxLength={3} placeholder="פרק מס׳"
+        value={value} onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))} />
+      <button className="jump-btn" aria-label="מעבר לפרק">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.5-4.5" /></svg>
+      </button>
+    </form>
+  );
+}
+
+function UnitButton({ u, compact, selected, flash, onClick }: { u: PublicUnit; compact: boolean; selected: boolean; flash: boolean; onClick: () => void }) {
   const status = u.status === 'free' ? 'פנוי' : u.status === 'taken' ? `נלקח${u.takerName ? ` ע״י ${u.takerName}` : ''}` : 'נקרא';
-  const cls = [u.status !== 'free' ? u.status : '', u.mine ? 'mine' : '', selected ? 'selected' : ''].join(' ');
+  const cls = [u.status !== 'free' ? u.status : '', u.mine ? 'mine' : '', selected ? 'selected' : '', flash ? 'flash' : ''].join(' ');
   if (compact) {
     return (
-      <button className={`cell ${cls}`} onClick={onClick} aria-pressed={selected} aria-label={`${u.detail}, ${selected ? 'נבחר' : status}`}>
+      <button id={`u-${u.id}`} className={`cell ${cls}`} onClick={onClick} aria-pressed={selected} aria-label={`${u.detail}, ${selected ? 'נבחר' : status}`}>
         {u.sublabel && <small>{u.sublabel}</small>}
         <span>{u.label}</span>
       </button>
     );
   }
   return (
-    <button className={`part ${cls}`} onClick={onClick} aria-pressed={selected} aria-label={`${u.label}, ${u.detail}, ${selected ? 'נבחר' : status}`}>
+    <button id={`u-${u.id}`} className={`part ${cls}`} onClick={onClick} aria-pressed={selected} aria-label={`${u.label}, ${u.detail}, ${selected ? 'נבחר' : status}`}>
       <span className="t">{u.label}</span>
       <span className="d">{u.detail}</span>
-      {u.status !== 'free' && <span className="who">{u.mine ? 'שלי' : status}</span>}
+      <span className="who">{u.status === 'free' ? (selected ? 'נבחר' : 'פנוי') : u.mine ? 'שלי' : status}</span>
     </button>
   );
 }
 
-function MineList({ units, onRead, onRelease, onReadAll, active }: {
+function MineList({ slug, units, active, one, onRead, onRelease, onReadAll }: {
+  slug: string;
   units: PublicUnit[];
+  active: boolean;
+  one: string;
   onRead: (id: number) => void;
   onRelease: (id: number) => void;
   onReadAll: () => void;
-  active: boolean;
 }) {
   if (!units.length) {
-    return <div className="empty" style={{ marginTop: 16 }}>עדיין לא לקחת פרקים בחלוקה הזאת.</div>;
+    return <div className="empty" style={{ marginTop: 16 }}>עדיין לא לקחת {one} בחלוקה הזאת. חזרו ל״הכל״ ובחרו {one} פנוי.</div>;
   }
   const open = units.filter((u) => u.status === 'taken');
+  const read = units.length - open.length;
+  const ordered = [...open, ...units.filter((u) => u.status === 'read')];
   return (
     <div style={{ marginTop: 8 }}>
-      {units.map((u) => (
-        <div key={u.id} className="mine-item">
+      <div className="mine-summary">
+        <span>קראת {read} מתוך {units.length}</span>
+        <div className="progress" style={{ flex: 1 }} aria-hidden="true">
+          <div className="read" style={{ width: `${(read / units.length) * 100}%` }} />
+        </div>
+      </div>
+      {ordered.map((u) => (
+        <div key={u.id} className={`mine-item ${u.status === 'read' ? 'is-read' : ''}`}>
           <div className="label">{u.sublabel ? `${u.sublabel} ${u.label}` : u.label}</div>
           <div className="info">
             <div>{u.detail}</div>
             <div className="muted" style={{ fontSize: 13 }}>{u.status === 'read' ? 'נקרא. תודה!' : 'ממתין לקריאה'}</div>
           </div>
+          {u.status === 'read' ? null : (
           <div className="actions">
-            <a className="btn btn-small btn-outline" href={sefariaUrl(u.ref)} target="_blank" rel="noopener noreferrer">
+            <Link className="btn btn-small" href={`/c/${slug}/read/${u.id}`}>
               <BookIcon /> לקריאה
-            </a>
-            {u.status === 'taken' && active && (
+            </Link>
+            {active && (
               <>
-                <button className="btn btn-small" onClick={() => onRead(u.id)}><CheckIcon /> קראתי</button>
+                <button className="btn btn-small btn-outline" onClick={() => onRead(u.id)}><CheckIcon /> קראתי</button>
                 <button className="btn btn-small btn-ghost" onClick={() => onRelease(u.id)} aria-label={`לשחרר את ${u.detail}`}>שחרור</button>
               </>
             )}
           </div>
+          )}
         </div>
       ))}
       {open.length > 1 && active && (
-        <button className="btn btn-block" style={{ marginTop: 16 }} onClick={onReadAll}>
+        <button className="btn btn-block btn-outline" style={{ marginTop: 16 }} onClick={onReadAll}>
           <CheckIcon /> קראתי את כולם ({open.length})
         </button>
       )}
@@ -305,11 +397,36 @@ function MineList({ units, onRead, onRelease, onReadAll, active }: {
   );
 }
 
+function ActivityFeed({ items, many, one }: { items: ActivityItem[]; many: string; one: string }) {
+  return (
+    <section className="activity" aria-label="פעילות אחרונה">
+      <h2 className="serif section-title">פעילות אחרונה</h2>
+      <ul>
+        {items.map((a, i) => (
+          <li key={i}>
+            <span className={`dot ${a.kind}`} aria-hidden="true" />
+            <span className="what">
+              {a.kind === 'complete'
+                ? <b>ספר התהילים הושלם! (פעם {hebNum(a.count)})</b>
+                : <><b>{a.name ?? 'משתתף'}</b> {a.kind === 'take' ? 'לקח/ה' : 'קרא/ה'} {a.count === 1 ? `${one} אחד` : `${a.count} ${many}`}</>}
+            </span>
+            <time className="when" dateTime={a.at}>{timeAgo(a.at)}</time>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
   }, [onClose]);
   return (
     <div className="backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -321,18 +438,20 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-function TakeSheet({ slug, units, auto, maxFree = 0, unitWord, onClose, onDone, onConflict }: {
+function TakeSheet({ slug, units, auto, maxFree = 0, one, many, onClose, onDone, onConflict }: {
   slug: string;
   units?: PublicUnit[];
   auto?: boolean;
   maxFree?: number;
-  unitWord: string;
+  one: string;
+  many: string;
   onClose: () => void;
-  onDone: (msg: string) => void;
+  onDone: (ids: number[]) => void;
   onConflict: (msg: string) => void;
 }) {
   const [name, setName] = useState('');
   const [count, setCount] = useState(Math.min(5, maxFree) || 1);
+  const [showDedication, setShowDedication] = useState(false);
   const [dedicationKind, setDedicationKind] = useState<DedicationKind>('ilui');
   const [dedicationName, setDedicationName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -340,8 +459,7 @@ function TakeSheet({ slug, units, auto, maxFree = 0, unitWord, onClose, onDone, 
 
   useEffect(() => setName(remember('name')), []);
 
-  const options = [1, 3, 5, 10].filter((n) => n <= maxFree);
-  if (auto && maxFree > 0 && !options.includes(maxFree) && maxFree < 10) options.push(maxFree);
+  const options = [...new Set([1, 3, 5, 10, maxFree < 10 ? maxFree : 0].filter((n) => n > 0 && n <= maxFree))].sort((a, b) => a - b);
   const n = auto ? count : units?.length ?? 0;
 
   async function submit(e: React.FormEvent) {
@@ -349,21 +467,20 @@ function TakeSheet({ slug, units, auto, maxFree = 0, unitWord, onClose, onDone, 
     setBusy(true);
     setError('');
     try {
-      remember('name', name);
+      remember('name', name.trim());
       const res = await api<{ taken: number[] }>(`/api/c/${slug}/actions`, {
         action: 'take',
         ...(auto ? { count } : { unitIds: units!.map((u) => u.id) }),
         name,
         device: getDeviceId(),
         dedicationKind,
-        dedicationName,
+        dedicationName: showDedication ? dedicationName : '',
       });
-      const one = unitWord === 'פרקים' ? 'פרק' : 'חלק';
-      onDone(res.taken.length === 1 ? `נלקח ${one} אחד. קריאה מהנה!` : `נלקחו ${res.taken.length} ${unitWord}. קריאה מהנה!`);
+      onDone(res.taken);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         const conflicts = (err.data.conflicts as string[] | undefined)?.join(', ');
-        onConflict(conflicts ? `${err.message}: ${conflicts}. בחרו אחרים.` : err.message);
+        onConflict(conflicts ? `מישהו הקדים אותך: ${conflicts}. בחרו ${many} אחרים.` : err.message);
         if (!auto) onClose();
       } else {
         setError(err instanceof Error ? err.message : 'משהו השתבש');
@@ -373,52 +490,54 @@ function TakeSheet({ slug, units, auto, maxFree = 0, unitWord, onClose, onDone, 
   }
 
   return (
-    <Sheet title="לקיחת פרקים" onClose={onClose}>
+    <Sheet title={`לקיחת ${many}`} onClose={onClose}>
       <form onSubmit={submit} className="stack" style={{ gap: 18 }}>
         <div>
-          <h2>{auto ? `כמה ${unitWord} לקחת?` : `לקחת ${n} ${n === 1 ? (unitWord === 'פרקים' ? 'פרק' : 'חלק') : unitWord}`}</h2>
+          <h2>{auto ? `כמה ${many} לקחת?` : n === 1 ? `לקחת ${one} אחד` : `לקחת ${n} ${many}`}</h2>
           <div className="muted" style={{ fontSize: 14 }}>
-            {auto ? `נבחר עבורך את ה${unitWord} הפנויים הבאים לפי הסדר.` : 'הם יישמרו על שמך. אפשר לסמן ״קראתי״ בכל רגע.'}
+            {auto ? `נבחר עבורך את ה${many} הפנויים הבאים לפי הסדר.` : `ה${many} יישמרו על שמך, ותוכלו לקרוא אותם כאן באתר.`}
           </div>
         </div>
 
         {auto ? (
-          <div className="pills">
+          <div className="pills" role="group" aria-label="כמות">
             {options.map((o) => (
-              <button type="button" key={o} className="pill" aria-pressed={count === o} onClick={() => setCount(o)}>{o}</button>
+              <button type="button" key={o} className="pill pill-num" aria-pressed={count === o} onClick={() => setCount(o)}>{o}</button>
             ))}
           </div>
         ) : (
           <div className="pills">
             {units!.map((u) => (
-              <span key={u.id} className="chip" style={{ fontSize: 15, padding: '6px 12px', fontFamily: 'var(--serif)', color: 'var(--ink)' }}>
-                {u.sublabel ? `${u.sublabel} ${u.label}` : u.label}
-              </span>
+              <span key={u.id} className="unit-chip">{u.sublabel ? `${u.sublabel} ${u.label}` : u.label}</span>
             ))}
           </div>
         )}
 
         <div className="field">
           <label htmlFor="take-name">השם שלך</label>
-          <input id="take-name" className="input" required maxLength={60} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+          <input id="take-name" className="input" required maxLength={60} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="כפי שיופיע ברשימה" />
         </div>
 
-        <div className="field">
-          <span className="label">להוסיף גם שם <span className="muted" style={{ fontWeight: 400 }}>(לא חובה)</span></span>
-          <div className="pills">
-            {(Object.keys(DEDICATION_LABELS) as DedicationKind[]).map((k) => (
-              <button type="button" key={k} className="pill" aria-pressed={dedicationKind === k} onClick={() => setDedicationKind(k)}>
-                {DEDICATION_LABELS[k]}
-              </button>
-            ))}
+        {showDedication ? (
+          <div className="field">
+            <span className="label">להוסיף גם שם</span>
+            <div className="pills">
+              {(Object.keys(DEDICATION_LABELS) as DedicationKind[]).map((k) => (
+                <button type="button" key={k} className="pill" aria-pressed={dedicationKind === k} onClick={() => setDedicationKind(k)}>
+                  {DEDICATION_LABELS[k]}
+                </button>
+              ))}
+            </div>
+            <input className="input" maxLength={80} value={dedicationName} onChange={(e) => setDedicationName(e.target.value)}
+              placeholder="לדוגמה: יוסף בן אברהם" aria-label="שם נוסף" autoFocus />
           </div>
-          <input className="input" maxLength={80} value={dedicationName} onChange={(e) => setDedicationName(e.target.value)}
-            placeholder="לדוגמה: יוסף בן אברהם" aria-label="שם נוסף" />
-        </div>
+        ) : (
+          <button type="button" className="link-btn" onClick={() => setShowDedication(true)}>+ להוסיף שם לעילוי נשמה, לרפואה או להצלחה</button>
+        )}
 
         {error && <div className="error" role="alert">{error}</div>}
         <div className="stack" style={{ gap: 6 }}>
-          <button className="btn btn-block" disabled={busy || !name.trim() || n === 0}>{busy ? 'שומרים…' : 'אישור'}</button>
+          <button className="btn btn-block btn-lg" disabled={busy || !name.trim() || n === 0}>{busy ? 'שומרים…' : 'אישור'}</button>
           <button type="button" className="btn btn-block btn-ghost" onClick={onClose}>ביטול</button>
         </div>
       </form>
@@ -426,29 +545,51 @@ function TakeSheet({ slug, units, auto, maxFree = 0, unitWord, onClose, onDone, 
   );
 }
 
-function UnitSheet({ unit, onClose, onRead, onRelease, active }: {
+function UnitSheet({ slug, unit, onClose, onRead, onRelease, active, one }: {
+  slug: string;
   unit: PublicUnit;
   onClose: () => void;
   onRead: () => void;
   onRelease: () => void;
   active: boolean;
+  one: string;
 }) {
   return (
     <Sheet title={unit.detail} onClose={onClose}>
       <div>
         <h2>{unit.detail}</h2>
-        <div className="muted" style={{ fontSize: 14 }}>{unit.status === 'read' ? 'קראת את זה. תודה!' : 'נלקח על שמך'}</div>
+        <div className="muted" style={{ fontSize: 14 }}>{unit.status === 'read' ? 'קראת את זה. תודה!' : 'שמור על שמך'}</div>
       </div>
-      <a className="btn btn-block btn-outline" href={sefariaUrl(unit.ref)} target="_blank" rel="noopener noreferrer">
-        <BookIcon /> פתיחת הטקסט לקריאה
-      </a>
+      <Link className="btn btn-block btn-lg" href={`/c/${slug}/read/${unit.id}`}>
+        <BookIcon /> {unit.status === 'read' ? 'לקרוא שוב' : `לקריאת ה${one}`}
+      </Link>
       {unit.status === 'taken' && active && (
         <>
-          <button className="btn btn-block" onClick={onRead}><CheckIcon /> קראתי</button>
+          <button className="btn btn-block btn-outline" onClick={onRead}><CheckIcon /> כבר קראתי</button>
           <button className="btn btn-block btn-ghost" onClick={onRelease}>לשחרר בחזרה לרשימה</button>
         </>
       )}
       <button className="btn btn-block btn-ghost" onClick={onClose}>סגירה</button>
     </Sheet>
+  );
+}
+
+function Celebration({ books, onClose, onShare }: { books: number; onClose: () => void; onShare: () => void }) {
+  return (
+    <div className="backdrop celebrate" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="celebrate-card" role="dialog" aria-modal="true" aria-label="הספר הושלם">
+        <div className="celebrate-glow"><LogoMark size={72} stroke={2.5} /></div>
+        <div className="eyebrow">ספר תהילים שלם</div>
+        <h2 className="serif">הספר הושלם!</h2>
+        <p>
+          תודה לכל מי שקרא. ספר התהילים הושלם לעילוי נשמת <b>{site.honoree} ז״ל</b>
+          {books > 1 ? `, כבר ${books} פעמים בחלוקה הזאת` : ''}. תנצב״ה.
+        </p>
+        <div className="stack" style={{ gap: 8, width: '100%' }}>
+          <button className="btn btn-block" onClick={onShare}><ShareIcon /> לשתף ולהמשיך לסבב הבא</button>
+          <button className="btn btn-block btn-ghost" onClick={onClose}>סגירה</button>
+        </div>
+      </div>
+    </div>
   );
 }

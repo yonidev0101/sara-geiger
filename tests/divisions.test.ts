@@ -47,3 +47,8 @@ test('month and week divisions are contiguous over 1–150', () => {
     assert.equal(next, 151, kind);
   }
 });
+
+test('larger hebrew numerals for years', () => {
+  assert.equal(hebNum(787), 'תשפ״ז');
+  assert.equal(hebNum(176), 'קע״ו');
+});

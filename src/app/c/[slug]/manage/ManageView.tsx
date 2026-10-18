@@ -96,7 +96,7 @@ export function ManageView({ slug, initialKey, created }: { slug: string; initia
             <div className="eyebrow">ניהול החלוקה</div>
             <h1 className="serif" style={{ margin: '4px 0 0', fontSize: 34, fontWeight: 500 }}>{campaign.title}</h1>
             <div className="muted" style={{ fontSize: 14 }}>
-              {campaign.kindLabel} · סבב {campaign.round} · {counts.read} נקראו, {counts.taken} בקריאה, {counts.free} פנויים
+              {campaign.kindLabel} · סבב {campaign.round} · {counts.read} נקראו, {counts.taken} בקריאה, {counts.free} פנויים · {state.participants} משתתפים
               {campaign.status === 'closed' ? ' · סגורה' : ''}
             </div>
           </div>
@@ -105,9 +105,14 @@ export function ManageView({ slug, initialKey, created }: { slug: string; initia
 
         <section className="card stack">
           <CopyField label="קישור לשיתוף" value={publicUrl} onCopied={() => flash('הקישור הועתק')} />
-          <button className="btn" onClick={() => shareLink(publicUrl, `${campaign.title} · חלוקת תהילים לעילוי נשמת ${site.honoree} ז״ל`)}>
-            <ShareIcon /> שיתוף בוואטסאפ
-          </button>
+          <div className="pills">
+            <button className="btn" onClick={() => shareLink(publicUrl, `${campaign.title}\nחלוקת תהילים לעילוי נשמת ${site.honoree} ז״ל. בחרו פרק והצטרפו:`)}>
+              <ShareIcon /> שיתוף הקישור
+            </button>
+            <button className="btn btn-outline" onClick={() => shareLink(publicUrl, statusMessage(state))}>
+              שליחת עדכון מצב
+            </button>
+          </div>
           <CopyField label="קישור הניהול (פרטי, לא לשתף)" value={adminUrl} onCopied={() => flash('קישור הניהול הועתק')} />
         </section>
 
@@ -130,7 +135,10 @@ export function ManageView({ slug, initialKey, created }: { slug: string; initia
         </section>
 
         <section className="stack" style={{ gap: 12 }}>
-          <h2 className="serif" style={{ margin: 0, fontSize: 22, fontWeight: 500 }}>מי לקח מה ({taken.length})</h2>
+          <div className="row-between">
+            <h2 className="serif" style={{ margin: 0, fontSize: 22, fontWeight: 500 }}>מי לקח מה ({taken.length})</h2>
+            {taken.length > 0 && <button className="btn btn-outline btn-small" onClick={() => downloadCsv(campaign.title, taken)}>הורדה לאקסל</button>}
+          </div>
           {taken.length === 0 ? (
             <div className="empty">עדיין אף אחד לא לקח. שתפו את הקישור!</div>
           ) : (
@@ -202,8 +210,9 @@ function Settings({ state, onSave }: { state: AdminState; onSave: (v: Record<str
   const [deadline, setDeadline] = useState(c.deadline ?? '');
   const [isPublic, setIsPublic] = useState(c.isPublic);
   const [autoRenew, setAutoRenew] = useState(c.autoRenew);
+  const [releaseDays, setReleaseDays] = useState(c.releaseDays ? String(c.releaseDays) : '');
   return (
-    <form className="card stack" onSubmit={(e) => { e.preventDefault(); onSave({ title, deadline: deadline || null, isPublic, autoRenew }); }}>
+    <form className="card stack" onSubmit={(e) => { e.preventDefault(); onSave({ title, deadline: deadline || null, isPublic, autoRenew, releaseDays: releaseDays ? Number(releaseDays) : null }); }}>
       <h2 className="serif" style={{ margin: 0, fontSize: 22, fontWeight: 500 }}>הגדרות</h2>
       <div className="field">
         <label htmlFor="s-title">שם החלוקה</label>
@@ -212,6 +221,16 @@ function Settings({ state, onSave }: { state: AdminState; onSave: (v: Record<str
       <div className="field">
         <label htmlFor="s-deadline">תאריך יעד</label>
         <input id="s-deadline" type="date" className="input" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="s-release">פרקים שנלקחו ולא נקראו</label>
+        <select id="s-release" className="input" value={releaseDays} onChange={(e) => setReleaseDays(e.target.value)}>
+          <option value="">נשארים שמורים עד שמשחררים אותם</option>
+          <option value="2">משתחררים אוטומטית אחרי יומיים</option>
+          <option value="3">משתחררים אוטומטית אחרי 3 ימים</option>
+          <option value="7">משתחררים אוטומטית אחרי שבוע</option>
+          <option value="14">משתחררים אוטומטית אחרי שבועיים</option>
+        </select>
       </div>
       <label className="check"><input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />להציג בדף הבית</label>
       <label className="check"><input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} />כשהספר מושלם, להתחיל סבב חדש אוטומטית</label>
@@ -237,4 +256,37 @@ function UnitRow({ u, onRelease, onRead }: { u: AdminUnit; onRelease: () => void
       </td>
     </tr>
   );
+}
+
+function statusMessage(state: AdminState): string {
+  const { campaign, counts } = state;
+  const lines = [
+    `${campaign.title} · עדכון`,
+    `לעילוי נשמת ${site.honoree} ז״ל`,
+    '',
+    `נקראו ${counts.read} מתוך ${counts.total}.`,
+    counts.free ? `נשארו ${counts.free} פנויים. מי שעוד לא לקח, זה הזמן:` : 'כל החלקים נלקחו. מי שעוד לא סיים, נשמח שתסמנו ״קראתי״ כשתסיימו.',
+  ];
+  return lines.join('\n');
+}
+
+function downloadCsv(title: string, units: AdminUnit[]) {
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const rows = [
+    ['חלק', 'מצב', 'שם', 'נלקח', 'נקרא'],
+    ...units.map((u) => [
+      u.detail,
+      u.status === 'read' ? 'נקרא' : 'בקריאה',
+      u.takerName ?? '',
+      u.takenAt ? new Date(u.takenAt).toLocaleString('he-IL') : '',
+      u.readAt ? new Date(u.readAt).toLocaleString('he-IL') : '',
+    ]),
+  ];
+  const csv = '\uFEFF' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${title}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }

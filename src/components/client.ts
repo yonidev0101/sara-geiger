@@ -90,3 +90,16 @@ export function subscribeLive(slug: string, onEvent: (evt: { type: string; round
     document.removeEventListener('visibilitychange', onVisible);
   };
 }
+
+const rtf = typeof Intl !== 'undefined' ? new Intl.RelativeTimeFormat('he', { numeric: 'auto' }) : null;
+
+/** "לפני 5 דקות", "אתמול" and so on. */
+export function timeAgo(iso: string): string {
+  const sec = (new Date(iso).getTime() - Date.now()) / 1000;
+  if (!rtf) return '';
+  const abs = Math.abs(sec);
+  if (abs < 45) return 'הרגע';
+  if (abs < 3600) return rtf.format(Math.round(sec / 60), 'minute');
+  if (abs < 86400) return rtf.format(Math.round(sec / 3600), 'hour');
+  return rtf.format(Math.round(sec / 86400), 'day');
+}

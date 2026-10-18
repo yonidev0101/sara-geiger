@@ -12,8 +12,9 @@ export function SiteHeader({ children }: { children?: React.ReactNode }) {
         </Link>
         {children ?? (
           <nav className="nav" aria-label="ניווט ראשי">
-            <Link href="/#campaigns">חלוקות פעילות</Link>
-            <Link href="/#how">איך זה עובד</Link>
+            <Link href="/#campaigns" className="nav-wide">חלוקות</Link>
+            <Link href="/tehillim" className="nav-wide">ספר תהילים</Link>
+            <Link href="/mine">הפרקים שלי</Link>
             <Link href="/new" className="btn btn-small">פתיחת חלוקה</Link>
           </nav>
         )}
@@ -29,7 +30,11 @@ export function SiteFooter() {
         <span className="serif" style={{ fontSize: 17, color: 'var(--ink)' }}>
           {site.brandName} · לעילוי נשמת {site.honoree} ז״ל
         </span>
-        <span>תנצב״ה</span>
+        <nav className="footer-nav" aria-label="קישורים">
+          <Link href="/tehillim">ספר תהילים</Link>
+          <Link href="/mine">הפרקים שלי</Link>
+          <Link href="/new">פתיחת חלוקה</Link>
+        </nav>
       </div>
     </footer>
   );
