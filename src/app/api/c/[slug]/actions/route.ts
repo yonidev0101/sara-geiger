@@ -1,4 +1,4 @@
-import { markRead, releaseUnits, takeUnits, UserError } from '@/lib/campaigns';
+import { markRead, releaseUnits, setPartProgress, takeUnits, UserError } from '@/lib/campaigns';
 import { handle, rateLimited, readJson, tooMany } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         return takeUnits(slug, body);
       case 'read':
         return markRead(slug, body.unitIds, body.device);
+      case 'progress':
+        return setPartProgress(slug, body);
       case 'release':
         return releaseUnits(slug, body.unitIds, body.device);
       default:

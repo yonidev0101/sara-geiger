@@ -1,15 +1,16 @@
 import Link from 'next/link';
-import { SiteFooter, SiteHeader } from '@/components/SiteHeader';
+import { AppFrame } from '@/components/AppShell';
+import { ChevronIcon } from '@/components/Icons';
 import { getStats, listPublicCampaigns } from '@/lib/campaigns';
-import { hebrewDate } from '@/lib/hebrew';
 import { site } from '@/lib/site';
 import type { CampaignSummary } from '@/lib/types';
+import { ContinueReading } from './ContinueReading';
 
 export const dynamic = 'force-dynamic';
 
 async function load() {
   try {
-    const [stats, campaigns] = await Promise.all([getStats(), listPublicCampaigns()]);
+    const [stats, campaigns] = await Promise.all([getStats(), listPublicCampaigns(20)]);
     return { stats, campaigns };
   } catch (err) {
     console.error(err);
@@ -21,126 +22,58 @@ export default async function Home() {
   const { stats, campaigns } = await load();
 
   return (
-    <>
-      <SiteHeader />
-      <main>
-        <section className="container hero" id="about">
-          <div className="text">
-            <div className="eyebrow">לעילוי נשמת</div>
-            <h1>{site.honoree} ז״ל</h1>
-            <div className="muted" style={{ fontSize: 17 }}>
-              {site.honoreeFamilyName}
-              {site.passingDateHebrew ? ` · ${site.passingDateHebrew}` : ''} · תנצב״ה
-            </div>
-            <hr className="rule" />
-            {site.about && (
-              <p className="serif" style={{ margin: 0, fontSize: 21, lineHeight: 1.8, color: 'var(--ink-soft)', maxWidth: 560 }}>
-                {site.about}
-              </p>
-            )}
-            <p style={{ margin: 0, fontSize: 18, lineHeight: 1.7, color: 'var(--ink-soft)', maxWidth: 560 }}>
-              כאן מחלקים את ספר תהילים בין המשפחה, החברים וכל מי שרוצה להצטרף. בוחרים פרקים, קוראים, ורואים יחד איך
-              הספר מושלם לעילוי נשמתה.
-            </p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
-              <Link href="#campaigns" className="btn">להצטרף לחלוקה</Link>
-              <Link href="/new" className="btn btn-outline">לפתוח חלוקה חדשה</Link>
-              <Link href="/tehillim" className="btn btn-ghost">לקריאה חופשית</Link>
-            </div>
-          </div>
-          <div className="photo">
-            <div className="arch">
-              {site.photo ? <img src={site.photo} alt={site.honoreeFamilyName} /> : <div aria-hidden="true" />}
-            </div>
-          </div>
-        </section>
+    <AppFrame>
+      <section className="hero">
+        <div className="eyebrow">לעילוי נשמת</div>
+        <h1 className="hero-name">{site.honoree} ז״ל</h1>
+        <div className="hero-sub">{site.honoreeFamilyName}{site.passingDateHebrew ? ` · ${site.passingDateHebrew}` : ''} · תנצב״ה</div>
+        {site.about && <p className="lead" style={{ maxWidth: 440 }}>{site.about}</p>}
+      </section>
 
-        {stats && (
-          <section className="stats" aria-label="במספרים">
-            <div className="container inner">
-              <div>
-                <div className="num">{stats.books}</div>
-                <div className="lbl">ספרי תהילים שלמים נקראו לעילוי נשמתה</div>
-              </div>
-              <div>
-                <div className="num">{stats.readings}</div>
-                <div className="lbl">פרקים וחלקים נקראו</div>
-              </div>
-              <div>
-                <div className="num">{stats.campaigns}</div>
-                <div className="lbl">חלוקות נפתחו</div>
-              </div>
-            </div>
-          </section>
-        )}
+      <ContinueReading />
 
-        <section className="container section" id="campaigns">
-          <div className="row-between" style={{ marginBottom: 24 }}>
-            <h2 style={{ margin: 0 }}>חלוקות פעילות</h2>
-            <span className="muted">מתעדכן בזמן אמת</span>
-          </div>
-          {campaigns.length ? (
-            <div className="cards">
-              {campaigns.map((c) => (
-                <CampaignCard key={c.slug} c={c} />
-              ))}
-            </div>
-          ) : (
-            <div className="empty">
-              <p style={{ marginTop: 0 }}>עדיין אין חלוקות פעילות.</p>
-              <Link href="/new" className="btn">לפתוח את החלוקה הראשונה</Link>
-            </div>
-          )}
-        </section>
+      <div className="section-label">
+        <span>חלוקות פעילות</span>
+        {campaigns.length > 0 && <span>{campaigns.length}</span>}
+      </div>
+      {campaigns.length ? (
+        <div className="list">
+          {campaigns.map((c) => <CampaignRow key={c.slug} c={c} />)}
+        </div>
+      ) : (
+        <div className="empty">
+          <span>עדיין אין חלוקות פעילות.</span>
+          <Link href="/new" className="btn">פתיחת חלוקה ראשונה</Link>
+        </div>
+      )}
 
-        <section className="container section" id="how">
-          <h2>איך זה עובד</h2>
-          <div className="steps">
-            <div className="step">
-              <div className="n">א׳</div>
-              <div className="t">פותחים חלוקה</div>
-              <p>בוחרים איך לחלק: לפי פרקים, ימי החודש, ימי השבוע או חמשת הספרים. מקבלים קישור לשיתוף וקישור ניהול פרטי.</p>
-            </div>
-            <div className="step">
-              <div className="n">ב׳</div>
-              <div className="t">משתפים ובוחרים</div>
-              <p>כל אחד רואה מה פנוי ולוקח בלחיצה, בלי הרשמה. אפשר להוסיף שם נוסף לעילוי נשמה, לרפואה או להצלחה.</p>
-            </div>
-            <div className="step">
-              <div className="n">ג׳</div>
-              <div className="t">קוראים ומסיימים יחד</div>
-              <p>קוראים את הפרק כאן באתר, בגופן נוח ובגודל שמתאים לכם, ומסמנים ״קראתי״. כשהספר מושלם, מתחיל סבב חדש מעצמו.</p>
-            </div>
-          </div>
-        </section>
-      </main>
-      <SiteFooter />
-    </>
+      {campaigns.length > 0 && (
+        <Link href="/new" className="btn btn-secondary btn-block" style={{ marginTop: 16 }}>פתיחת חלוקה חדשה</Link>
+      )}
+
+      {stats && stats.books > 0 && (
+        <div className="tally">
+          <b>{stats.books}</b> {stats.books === 1 ? 'ספר תהילים שלם הושלם' : 'ספרי תהילים שלמים הושלמו'} לעילוי נשמתה
+        </div>
+      )}
+    </AppFrame>
   );
 }
 
-function CampaignCard({ c }: { c: CampaignSummary }) {
-  const readPct = c.counts.total ? (c.counts.read / c.counts.total) * 100 : 0;
+function CampaignRow({ c }: { c: CampaignSummary }) {
+  const pct = c.counts.total ? (c.counts.read / c.counts.total) * 100 : 0;
   const takenPct = c.counts.total ? (c.counts.taken / c.counts.total) * 100 : 0;
   return (
-    <Link href={`/c/${c.slug}`} className="card campaign-card">
-      <div className="row-between" style={{ alignItems: 'flex-start' }}>
-        <div className="serif" style={{ fontSize: 23, fontWeight: 500, lineHeight: 1.25 }}>{c.title}</div>
-        <span className="chip">{c.kindLabel}</span>
+    <Link href={`/c/${c.slug}`} className="list-row">
+      <div className="grow">
+        <div className="title serif" style={{ fontSize: 18, fontWeight: 500 }}>{c.title}</div>
+        <div className="sub">{c.kindLabel} · {c.counts.free > 0 ? `${c.counts.free} פנויים` : 'הכל נלקח'}</div>
+        <div className="progress" style={{ marginTop: 10 }} aria-hidden="true">
+          <div className="read" style={{ width: `${pct}%` }} />
+          <div className="taken" style={{ width: `${takenPct}%` }} />
+        </div>
       </div>
-      <div className="meta">
-        {c.openerName && <span>נפתח ע״י {c.openerName}</span>}
-        {c.deadline && <span>עד {hebrewDate(c.deadline)}</span>}
-        <span>{c.participants} משתתפים</span>
-      </div>
-      <div className="progress" aria-hidden="true">
-        <div className="read" style={{ width: `${readPct}%` }} />
-        <div className="taken" style={{ width: `${takenPct}%` }} />
-      </div>
-      <div className="row-between" style={{ fontSize: 14 }}>
-        <span><b>{Math.round(readPct)}%</b> נקרא · {c.counts.free} פנויים</span>
-        <span style={{ color: 'var(--gold-text)', fontWeight: 600 }}>להצטרפות ←</span>
-      </div>
+      <span className="chev"><ChevronIcon /></span>
     </Link>
   );
 }

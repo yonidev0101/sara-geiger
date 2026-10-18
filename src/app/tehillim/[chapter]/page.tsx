@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { hebNum } from '@/lib/hebrew';
-import { getPassage, TEXT_CREDIT } from '@/lib/text';
+import { getSegmentVerses, TEXT_CREDIT } from '@/lib/text';
 import { FreeReader } from './FreeReader';
 
 type Params = { params: Promise<{ chapter: string }> };
@@ -19,5 +19,5 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function ChapterPage({ params }: Params) {
   const n = chapterOf((await params).chapter);
-  return <FreeReader chapter={n} chapters={getPassage(`Psalms.${n}`)} credit={TEXT_CREDIT} />;
+  return <FreeReader key={n} chapter={n} verses={getSegmentVerses(`Psalms.${n}`, 0)} credit={TEXT_CREDIT} />;
 }

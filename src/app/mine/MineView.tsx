@@ -2,12 +2,15 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { BookIcon } from '@/components/Icons';
+import { AppFrame } from '@/components/AppShell';
+import { CheckIcon, ChevronIcon } from '@/components/Icons';
 import { api, getDeviceId } from '@/components/client';
 import type { MyUnit } from '@/lib/types';
+import { partsDone, unitHref } from '@/lib/units';
 
 export function MineView() {
   const [units, setUnits] = useState<MyUnit[] | null>(null);
+  const [showRead, setShowRead] = useState(false);
 
   useEffect(() => {
     api<{ units: MyUnit[] }>(`/api/mine?device=${getDeviceId()}`)
@@ -15,48 +18,58 @@ export function MineView() {
       .catch(() => setUnits([]));
   }, []);
 
-  if (!units) return <p className="muted">טוען…</p>;
-  if (!units.length) {
-    return (
-      <div className="empty">
-        <p style={{ marginTop: 0 }}>עדיין לא לקחת פרקים במכשיר הזה.</p>
-        <Link href="/#campaigns" className="btn">לחלוקות הפעילות</Link>
-      </div>
-    );
-  }
-
-  const byCampaign = new Map<string, MyUnit[]>();
-  for (const u of units) {
-    if (!byCampaign.has(u.campaignSlug)) byCampaign.set(u.campaignSlug, []);
-    byCampaign.get(u.campaignSlug)!.push(u);
-  }
-  const open = units.filter((u) => u.status === 'taken').length;
+  const open = units?.filter((u) => u.status === 'taken') ?? [];
+  const read = units?.filter((u) => u.status === 'read') ?? [];
 
   return (
-    <div className="stack" style={{ gap: 24, paddingBottom: 24 }}>
-      <div className="banner">{open ? `מחכים לך ${open} לקריאה.` : 'קראת הכל. תודה רבה!'}</div>
-      {[...byCampaign.entries()].map(([slug, list]) => (
-        <section key={slug} className="card" style={{ padding: '6px 18px' }}>
-          <div className="row-between" style={{ padding: '12px 0 4px' }}>
-            <Link href={`/c/${slug}`} className="serif" style={{ fontSize: 21 }}>{list[0].campaignTitle}</Link>
-            <Link href={`/c/${slug}`} className="muted" style={{ fontSize: 14 }}>לחלוקה ←</Link>
-          </div>
-          {list.map((u) => (
-            <div key={u.id} className={`mine-item ${u.status === 'read' ? 'is-read' : ''}`}>
-              <div className="label">{u.sublabel ? `${u.sublabel} ${u.label}` : u.label}</div>
-              <div className="info">
-                <div>{u.detail}</div>
-                <div className="muted" style={{ fontSize: 13 }}>{u.status === 'read' ? 'נקרא. תודה!' : 'ממתין לקריאה'}</div>
-              </div>
-              {u.status === 'taken' && (
-                <div className="actions">
-                  <Link className="btn btn-small" href={`/c/${slug}/read/${u.id}`}><BookIcon /> לקריאה</Link>
-                </div>
-              )}
-            </div>
-          ))}
-        </section>
-      ))}
-    </div>
+    <AppFrame title="הקריאה שלי">
+      {!units ? (
+        <p className="muted" style={{ textAlign: 'center', marginTop: 40 }}>טוען…</p>
+      ) : units.length === 0 ? (
+        <div className="empty" style={{ marginTop: 24 }}>
+          <span>עדיין לא לקחת פרקים.<br />בחרו חלוקה ולקחו פרק לקריאה.</span>
+          <Link href="/" className="btn">לחלוקות</Link>
+        </div>
+      ) : (
+        <>
+          <div className="section-label"><span>לקריאה</span><span>{open.length}</span></div>
+          {open.length ? (
+            <div className="list">{open.map((u) => <UnitRow key={u.id} u={u} />)}</div>
+          ) : (
+            <div className="banner">קראת הכל. תודה רבה!</div>
+          )}
+
+          {read.length > 0 && (
+            <>
+              <button className="section-label text-btn" style={{ width: '100%', background: 'none', border: 0 }} onClick={() => setShowRead(!showRead)} aria-expanded={showRead}>
+                <span>נקראו ({read.length})</span>
+                <span>{showRead ? 'הסתרה' : 'הצגה'}</span>
+              </button>
+              {showRead && <div className="list">{read.map((u) => <UnitRow key={u.id} u={u} />)}</div>}
+            </>
+          )}
+        </>
+      )}
+    </AppFrame>
+  );
+}
+
+function UnitRow({ u }: { u: MyUnit }) {
+  const done = partsDone(u);
+  const read = u.status === 'read';
+  return (
+    <Link href={unitHref(u.campaignSlug, u)} className="list-row">
+      <span className="badge-num" style={read ? { background: 'var(--ink)', color: 'var(--parchment)' } : undefined}>
+        {read ? <CheckIcon /> : u.sublabel ? u.label : u.parts > 1 ? `${done}/${u.parts}` : u.label.replace(/^יום /, '')}
+      </span>
+      <span className="grow">
+        <span className="title" style={{ display: 'block' }}>{u.parts > 1 ? u.label : u.detail}</span>
+        <span className="sub">{u.campaignTitle}{u.parts > 1 && !read ? ` · ${done} מתוך ${u.parts} פרקים` : ''}</span>
+        {u.parts > 1 && !read && (
+          <div className="progress gold" style={{ marginTop: 8 }} aria-hidden="true"><div className="read" style={{ width: `${(done / u.parts) * 100}%` }} /></div>
+        )}
+      </span>
+      <span className="chev"><ChevronIcon /></span>
+    </Link>
   );
 }

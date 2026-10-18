@@ -104,3 +104,27 @@ export function buildUnits(kind: Kind, split119: boolean): UnitDef[] {
 export function sefariaUrl(ref: string): string {
   return `https://www.sefaria.org/${ref}?lang=he`;
 }
+
+export interface Segment {
+  chapter: number;
+  /** Verse range when only part of the chapter is included (chapter 119 splits). */
+  from: number | null;
+  to: number | null;
+  title: string;
+}
+
+/** The chapters (or chapter parts) a unit is made of, in reading order. */
+export function segmentsOf(ref: string): Segment[] {
+  const verses = ref.match(/^Psalms\.(\d+)\.(\d+)-(\d+)$/);
+  if (verses) {
+    const [ch, a, b] = [Number(verses[1]), Number(verses[2]), Number(verses[3])];
+    return [{ chapter: ch, from: a, to: b, title: `פרק ${hebNum(ch)}, פסוקים ${a}–${b}` }];
+  }
+  const range = ref.match(/^Psalms\.(\d+)(?:-(\d+))?$/);
+  if (!range) return [];
+  const a = Number(range[1]);
+  const b = Number(range[2] ?? range[1]);
+  const out: Segment[] = [];
+  for (let ch = a; ch <= b; ch++) out.push({ chapter: ch, from: null, to: null, title: `פרק ${hebNum(ch)}` });
+  return out;
+}

@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { query, tx } from './db';
-import { buildUnits, kindLabel, type Kind } from './divisions';
+import { buildUnits, kindLabel, segmentsOf, type Kind } from './divisions';
 import { newSlug, newToken } from './ids';
 import { publish } from './events';
 import type {
@@ -52,6 +52,7 @@ interface UnitRow {
   taker_device: string | null;
   taken_at: Date | null;
   read_at: Date | null;
+  progress: number[];
 }
 
 const CAMPAIGN_COLS = `id, slug, admin_token, title, kind, split119, opener_name,
@@ -119,7 +120,7 @@ async function logActivity(db: Db, campaignId: number, kind: ActivityItem['kind'
 async function releaseStale(c: CampaignRow): Promise<boolean> {
   if (!c.release_days || c.status !== 'active') return false;
   const res = await query(
-    `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null
+    `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null, progress = '{}'
      where campaign_id = $1 and status = 'taken' and taken_at < now() - make_interval(days => $2) returning id`,
     [c.id, c.release_days],
   );
@@ -190,7 +191,7 @@ export async function createCampaign(input: CreateInput): Promise<{ slug: string
 
 async function loadUnits(campaignId: number): Promise<UnitRow[]> {
   return query<UnitRow>(
-    `select id, idx, label, sublabel, detail, group_label, ref, status, taker_name, taker_device, taken_at, read_at
+    `select id, idx, label, sublabel, detail, group_label, ref, status, taker_name, taker_device, taken_at, read_at, progress
      from units where campaign_id = $1 order by idx`,
     [campaignId],
   );
@@ -231,6 +232,8 @@ export async function getState(slug: string, device: unknown): Promise<CampaignS
       status: u.status,
       takerName: u.status === 'free' ? null : u.taker_name,
       mine: !!dev && u.status !== 'free' && u.taker_device === dev,
+      parts: segmentsOf(u.ref).length,
+      progress: u.progress ?? [],
     })),
     dedications,
     counts: countUnits(units),
@@ -312,7 +315,7 @@ export async function takeUnits(slug: string, input: TakeInput): Promise<{ taken
     assertActive(c);
     if (c.release_days) {
       await client.query(
-        `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null
+        `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null, progress = '{}'
          where campaign_id = $1 and status = 'taken' and taken_at < now() - make_interval(days => $2)`,
         [c.id, c.release_days],
       );
@@ -342,7 +345,7 @@ export async function takeUnits(slug: string, input: TakeInput): Promise<{ taken
       if (!ids.length) throw new UserError('לא נשארו פרקים פנויים', 409);
     }
     await client.query(
-      `update units set status = 'taken', taker_name = $1, taker_device = $2, taken_at = now(), read_at = null
+      `update units set status = 'taken', taker_name = $1, taker_device = $2, taken_at = now(), read_at = null, progress = '{}'
        where id = any($3::int[])`,
       [name, device, ids],
     );
@@ -355,6 +358,42 @@ export async function takeUnits(slug: string, input: TakeInput): Promise<{ taken
 }
 
 /** Marks units as read. Completing the whole book starts a new round when auto-renew is on. */
+/**
+ * Marks taken units as read inside a transaction and logs the reading.
+ * When the whole book is read, counts it and starts a new round if auto-renew is on.
+ */
+async function finishUnits(
+  client: PoolClient,
+  c: CampaignRow,
+  ids: number[],
+  device: string | null,
+): Promise<{ completed: boolean; round: number }> {
+  const updated = await client.query(
+    `update units set status = 'read', read_at = now()
+     where campaign_id = $1 and id = any($2::int[]) and status = 'taken' ${device ? 'and taker_device = $3' : ''}
+     returning idx, taker_name, taker_device`,
+    device ? [c.id, ids, device] : [c.id, ids],
+  );
+  if (updated.rowCount) {
+    const first = updated.rows[0];
+    await logActivity(client, c.id, 'read', first.taker_name, first.taker_device, updated.rowCount);
+  }
+  for (const r of updated.rows) {
+    await client.query(
+      'insert into readings (campaign_id, unit_idx, round, reader_name, reader_device) values ($1, $2, $3, $4, $5)',
+      [c.id, r.idx, c.round, r.taker_name, r.taker_device],
+    );
+  }
+  const left = await client.query(`select count(*)::int as n from units where campaign_id = $1 and status <> 'read'`, [c.id]);
+  if (left.rows[0].n === 0) {
+    await client.query('update campaigns set completed_rounds = completed_rounds + 1 where id = $1', [c.id]);
+    await logActivity(client, c.id, 'complete', null, null, c.completed_rounds + 1);
+    if (c.auto_renew) await startNewRound(client, c.id);
+    return { completed: true, round: c.auto_renew ? c.round + 1 : c.round };
+  }
+  return { completed: false, round: c.round };
+}
+
 export async function markRead(
   slug: string,
   unitIds: unknown,
@@ -369,33 +408,62 @@ export async function markRead(
   const result = await tx(async (client) => {
     const c = await findCampaign(slug, client, true);
     assertActive(c);
-    const updated = await client.query(
-      `update units set status = 'read', read_at = now()
-       where campaign_id = $1 and id = any($2::int[]) and status = 'taken' ${opts.admin ? '' : 'and taker_device = $3'}
-       returning idx, taker_name, taker_device`,
-      opts.admin ? [c.id, ids] : [c.id, ids, dev],
-    );
-    if (updated.rowCount) {
-      const first = updated.rows[0];
-      await logActivity(client, c.id, 'read', first.taker_name, first.taker_device, updated.rowCount);
-    }
-    for (const r of updated.rows) {
-      await client.query(
-        'insert into readings (campaign_id, unit_idx, round, reader_name, reader_device) values ($1, $2, $3, $4, $5)',
-        [c.id, r.idx, c.round, r.taker_name, r.taker_device],
-      );
-    }
-    const left = await client.query(`select count(*)::int as n from units where campaign_id = $1 and status <> 'read'`, [c.id]);
-    if (left.rows[0].n === 0) {
-      await client.query('update campaigns set completed_rounds = completed_rounds + 1 where id = $1', [c.id]);
-      await logActivity(client, c.id, 'complete', null, null, c.completed_rounds + 1);
-      if (c.auto_renew) await startNewRound(client, c.id);
-      return { completed: true, round: c.auto_renew ? c.round + 1 : c.round };
-    }
-    return { completed: false, round: c.round };
+    return finishUnits(client, c, ids, opts.admin ? null : dev);
   });
   await publish({ slug, type: result.completed ? 'completed' : 'update', round: result.round });
   return result;
+}
+
+/**
+ * Marks one chapter (part) of a unit as read or not read. When every part is read
+ * the unit becomes read; un-marking a part of a read unit returns it to "taken".
+ */
+export async function setPartProgress(
+  slug: string,
+  input: { unitId?: unknown; part?: unknown; done?: unknown; device?: unknown },
+): Promise<{ completed: boolean; unitRead: boolean; progress: number[] }> {
+  const dev = cleanDevice(input.device);
+  if (!dev) throw new UserError('מזהה מכשיר חסר');
+  const unitId = Number(input.unitId);
+  const part = Number(input.part);
+  const done = input.done !== false;
+
+  const result = await tx(async (client) => {
+    const c = await findCampaign(slug, client, true);
+    assertActive(c);
+    const { rows } = await client.query(
+      'select id, idx, ref, status, progress, taker_device from units where campaign_id = $1 and id = $2 for update',
+      [c.id, unitId],
+    );
+    const u = rows[0];
+    if (!u) throw new UserError('החלק לא נמצא', 404);
+    if (u.status === 'free' || u.taker_device !== dev) throw new UserError('החלק הזה לא שמור על שמך', 403);
+    const parts = segmentsOf(u.ref).length;
+    if (!Number.isInteger(part) || part < 0 || part >= parts) throw new UserError('פרק לא תקין');
+
+    let progress: number[] = u.status === 'read' ? Array.from({ length: parts }, (_, i) => i) : [...(u.progress ?? [])];
+    progress = done ? [...new Set([...progress, part])] : progress.filter((p) => p !== part);
+    progress.sort((a, b) => a - b);
+
+    if (progress.length === parts) {
+      await client.query('update units set progress = $1 where id = $2', [progress, u.id]);
+      if (u.status === 'taken') return { ...(await finishUnits(client, c, [u.id], dev)), unitRead: true, progress };
+      return { completed: false, round: c.round, unitRead: true, progress };
+    }
+    if (u.status === 'read') {
+      await client.query(`update units set status = 'taken', read_at = null, progress = $1 where id = $2`, [progress, u.id]);
+      await client.query(
+        `delete from readings where id = (
+           select id from readings where campaign_id = $1 and unit_idx = $2 and round = $3 order by id desc limit 1)`,
+        [c.id, u.idx, c.round],
+      );
+    } else {
+      await client.query('update units set progress = $1 where id = $2', [progress, u.id]);
+    }
+    return { completed: false, round: c.round, unitRead: false, progress };
+  });
+  await publish({ slug, type: result.completed ? 'completed' : 'update', round: result.round });
+  return { completed: result.completed, unitRead: result.unitRead, progress: result.progress };
 }
 
 export async function releaseUnits(slug: string, unitIds: unknown, device: unknown): Promise<void> {
@@ -405,7 +473,7 @@ export async function releaseUnits(slug: string, unitIds: unknown, device: unkno
   if (!ids.length) throw new UserError('לא נבחרו פרקים');
   const c = await findCampaign(slug);
   await query(
-    `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null
+    `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null, progress = '{}'
      where campaign_id = $1 and id = any($2::int[]) and status = 'taken' and taker_device = $3`,
     [c.id, ids, dev],
   );
@@ -415,7 +483,7 @@ export async function releaseUnits(slug: string, unitIds: unknown, device: unkno
 async function startNewRound(client: PoolClient, campaignId: number) {
   await client.query('update campaigns set round = round + 1 where id = $1', [campaignId]);
   await client.query(
-    `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null, read_at = null
+    `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null, progress = '{}', read_at = null
      where campaign_id = $1`,
     [campaignId],
   );
@@ -469,7 +537,7 @@ export async function adminAction(slug: string, input: AdminInput): Promise<void
   switch (input.action) {
     case 'release':
       await query(
-        `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null, read_at = null
+        `update units set status = 'free', taker_name = null, taker_device = null, taken_at = null, progress = '{}', read_at = null
          where campaign_id = $1 and id = any($2::int[])`,
         [c.id, ids],
       );
@@ -517,15 +585,17 @@ export async function getReaderUnit(slug: string, unitId: number, device: unknow
   const c = await findCampaign(slug);
   const dev = cleanDevice(device);
   const [u] = await query<UnitRow>(
-    `select id, idx, label, sublabel, detail, group_label, ref, status, taker_name, taker_device, taken_at, read_at
+    `select id, idx, label, sublabel, detail, group_label, ref, status, taker_name, taker_device, taken_at, read_at, progress
      from units where campaign_id = $1 and id = $2`,
     [c.id, unitId],
   );
   if (!u) throw new UserError('החלק לא נמצא', 404);
   return {
     id: u.id,
+    label: u.label,
     detail: u.detail,
     ref: u.ref,
+    parts: segmentsOf(u.ref).length,
     status: u.status,
     mine: !!dev && u.status !== 'free' && u.taker_device === dev,
     campaignSlug: c.slug,
@@ -542,12 +612,14 @@ export async function getMyUnits(device: unknown): Promise<MyUnit[]> {
     label: string;
     sublabel: string | null;
     detail: string;
+    ref: string;
+    progress: number[];
     status: 'taken' | 'read';
     slug: string;
     title: string;
     cstatus: string;
   }>(
-    `select u.id, u.label, u.sublabel, u.detail, u.status, c.slug, c.title, c.status as cstatus
+    `select u.id, u.label, u.sublabel, u.detail, u.ref, u.progress, u.status, c.slug, c.title, c.status as cstatus
      from units u join campaigns c on c.id = u.campaign_id
      where u.taker_device = $1 and u.status in ('taken', 'read')
      order by (u.status = 'read'), c.created_at desc, u.idx
@@ -559,6 +631,9 @@ export async function getMyUnits(device: unknown): Promise<MyUnit[]> {
     label: r.label,
     sublabel: r.sublabel,
     detail: r.detail,
+    ref: r.ref,
+    parts: segmentsOf(r.ref).length,
+    progress: r.progress ?? [],
     status: r.status,
     campaignSlug: r.slug,
     campaignTitle: r.title,

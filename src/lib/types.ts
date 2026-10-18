@@ -20,6 +20,10 @@ export interface PublicUnit {
   status: UnitStatus;
   takerName: string | null;
   mine: boolean;
+  /** Number of chapters (or chapter parts) in this unit. */
+  parts: number;
+  /** Indexes of the parts the taker has marked as read. */
+  progress: number[];
 }
 
 export interface PublicCampaign {
@@ -86,6 +90,9 @@ export interface MyUnit {
   label: string;
   sublabel: string | null;
   detail: string;
+  ref: string;
+  parts: number;
+  progress: number[];
   status: 'taken' | 'read';
   campaignSlug: string;
   campaignTitle: string;
@@ -94,8 +101,10 @@ export interface MyUnit {
 
 export interface ReaderUnit {
   id: number;
+  label: string;
   detail: string;
   ref: string;
+  parts: number;
   status: UnitStatus;
   mine: boolean;
   campaignSlug: string;

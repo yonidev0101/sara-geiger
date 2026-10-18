@@ -1,97 +1,116 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { CheckIcon } from '@/components/Icons';
-import { ReaderControls, ReaderText, useReaderPrefs } from '@/components/ReaderText';
+import { TopBar } from '@/components/AppShell';
+import { CheckIcon, ChevronIcon } from '@/components/Icons';
+import { LogoMark } from '@/components/Logo';
+import { ReaderSettings, ReaderVerses, useReaderPrefs } from '@/components/ReaderText';
 import { api, getDeviceId } from '@/components/client';
+import { segmentsOf } from '@/lib/divisions';
 import { site } from '@/lib/site';
-import type { PassageChapter } from '@/lib/text';
+import type { Verse } from '@/lib/text';
 import type { CampaignState, PublicUnit, ReaderUnit } from '@/lib/types';
+import { nextPart } from '@/lib/units';
 
-export function ReaderView({ unit, chapters, credit }: { unit: ReaderUnit; chapters: PassageChapter[]; credit: string }) {
+type Done = null | 'part' | 'unit' | 'book';
+
+export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; part: number; verses: Verse[]; credit: string }) {
+  const router = useRouter();
   const prefs = useReaderPrefs();
+  const slug = unit.campaignSlug;
+  const segments = segmentsOf(unit.ref);
+  const seg = segments[part];
+  const multi = segments.length > 1;
+  const back = multi ? `/c/${slug}/u/${unit.id}` : `/c/${slug}`;
   const [me, setMe] = useState<PublicUnit | null>(null);
-  const [nextMine, setNextMine] = useState<PublicUnit | null>(null);
-  const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<Done>(null);
   const [error, setError] = useState('');
-  const back = `/c/${unit.campaignSlug}`;
 
   useEffect(() => {
-    api<CampaignState>(`/api/c/${unit.campaignSlug}?device=${getDeviceId()}`)
-      .then((s) => {
-        setMe(s.units.find((u) => u.id === unit.id) ?? null);
-        setNextMine(s.units.find((u) => u.mine && u.status === 'taken' && u.id !== unit.id) ?? null);
-      })
-      .catch(() => {});
     window.scrollTo(0, 0);
-  }, [unit.campaignSlug, unit.id]);
+    api<CampaignState>(`/api/c/${slug}?device=${getDeviceId()}`)
+      .then((s) => setMe(s.units.find((u) => u.id === unit.id) ?? null))
+      .catch(() => {});
+  }, [slug, unit.id]);
 
-  const canMark = !done && unit.campaignActive && me?.mine && me.status === 'taken';
+  const mine = !!me?.mine && unit.campaignActive;
+  const partDone = !!me && (me.status === 'read' || me.progress.includes(part));
 
-  async function markRead() {
+  async function mark(isRead: boolean) {
     setBusy(true);
     setError('');
     try {
-      await api(`/api/c/${unit.campaignSlug}/actions`, { action: 'read', unitIds: [unit.id], device: getDeviceId() });
-      setDone(true);
+      if (isRead !== partDone) {
+        const res = await api<{ unitRead: boolean; completed: boolean; progress: number[] }>(`/api/c/${slug}/actions`, {
+          action: 'progress', unitId: unit.id, part, done: isRead, device: getDeviceId(),
+        });
+        if (isRead) {
+          if (res.completed) return setDone('book');
+          if (res.unitRead) return setDone('unit');
+          const next = nextPart({ status: 'taken', parts: segments.length, progress: res.progress });
+          if (next >= 0) return router.push(`/c/${slug}/read/${unit.id}?p=${next}`);
+          return setDone('unit');
+        }
+      } else if (isRead && multi && me) {
+        const next = nextPart(me);
+        if (next >= 0 && next !== part) return router.push(`/c/${slug}/read/${unit.id}?p=${next}`);
+      }
+      router.push(back);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'משהו השתבש');
-    } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="reader">
-      <header className="reader-bar">
-        <div className="reader-bar-inner">
-          <Link href={back} className="back-link" aria-label="חזרה לחלוקה">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-            <span>חזרה</span>
-          </Link>
-          <div className="reader-bar-title">{unit.detail}</div>
-          <ReaderControls prefs={prefs} />
-        </div>
-      </header>
-
+    <div className="reader-app">
+      <TopBar back={back} title={seg?.title} actions={<ReaderSettings prefs={prefs} />} />
       <main className="reader-main">
         <div className="reader-head">
           <div className="eyebrow">לעילוי נשמת {site.honoree} ז״ל</div>
-          <h1 className="serif">{unit.detail}</h1>
-          <div className="muted" style={{ fontSize: 14 }}>{unit.campaignTitle}</div>
+          <h1 className="h1">{seg?.title ?? unit.detail}</h1>
+          <div className="muted" style={{ fontSize: 14 }}>
+            {multi ? `${unit.label} · ${part + 1} מתוך ${segments.length}` : unit.campaignTitle}
+          </div>
         </div>
 
-        <ReaderText chapters={chapters} prefs={prefs} />
+        <ReaderVerses verses={verses} prefs={prefs} />
 
-        <div className="reader-end">
-          {done ? (
-            <div className="reader-done" role="status">
-              <div className="done-mark"><CheckIcon /></div>
-              <div className="serif" style={{ fontSize: 24 }}>תודה! סומן כנקרא.</div>
-              <div className="muted">יהי רצון שתהיה הקריאה לעילוי נשמת {site.honoree} ז״ל.</div>
-              <div className="pills" style={{ justifyContent: 'center', marginTop: 8 }}>
-                {nextMine && (
-                  <Link className="btn" href={`/c/${unit.campaignSlug}/read/${nextMine.id}`}>להמשיך ל{nextMine.detail}</Link>
-                )}
-                <Link className={nextMine ? 'btn btn-outline' : 'btn'} href={back}>חזרה לחלוקה</Link>
-              </div>
-            </div>
-          ) : canMark ? (
-            <div className="stack" style={{ gap: 8 }}>
-              <button className="btn btn-block btn-lg" onClick={markRead} disabled={busy}>
-                <CheckIcon /> {busy ? 'שומרים…' : 'סיימתי לקרוא'}
+        {done ? (
+          <div className="reader-end">
+            {done === 'book' ? <div className="glow" style={{ alignSelf: 'center' }}><LogoMark size={64} stroke={2.5} /></div>
+              : <div className="success-mark" style={{ alignSelf: 'center' }}><CheckIcon /></div>}
+            <div className="q">{done === 'book' ? 'ספר התהילים הושלם!' : done === 'unit' ? `סיימת את ${multi ? unit.label : seg.title}. תודה!` : 'תודה!'}</div>
+            <div className="muted">יהי רצון שתהיה הקריאה לעילוי נשמת {site.honoree} ז״ל</div>
+            <Link className="btn btn-block" href={`/c/${slug}`}>חזרה לחלוקה</Link>
+          </div>
+        ) : mine ? (
+          <div className="reader-end">
+            <div className="q">{partDone ? 'הפרק סומן כנקרא' : 'קראת את הפרק?'}</div>
+            <div className="two">
+              <button className="btn" onClick={() => mark(true)} disabled={busy}>
+                <CheckIcon /> {partDone ? (multi ? 'לפרק הבא' : 'סגירה') : 'קראתי'}
               </button>
-              {error && <div className="error" role="alert">{error}</div>}
+              <button className="btn btn-secondary" onClick={() => mark(false)} disabled={busy}>
+                {partDone ? 'לבטל סימון' : 'עוד לא'}
+              </button>
             </div>
-          ) : me?.status === 'read' && me.mine ? (
-            <div className="muted" style={{ textAlign: 'center' }}>קראת את זה כבר. תודה!</div>
-          ) : (
-            <Link className="btn btn-outline btn-block" href={back}>חזרה לחלוקה</Link>
-          )}
-          <p className="credit">{credit}</p>
-        </div>
+            {error && <div className="error" role="alert">{error}</div>}
+          </div>
+        ) : (
+          <div className="reader-end" style={{ background: 'transparent', padding: 0 }}>
+            <div className="two">
+              {part < segments.length - 1 ? (
+                <Link className="btn" href={`/c/${slug}/read/${unit.id}?p=${part + 1}`}>לפרק הבא <ChevronIcon /></Link>
+              ) : <span />}
+              <Link className="btn btn-secondary" href={back}>חזרה</Link>
+            </div>
+          </div>
+        )}
+        <p className="credit">{credit}</p>
       </main>
     </div>
   );
