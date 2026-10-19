@@ -7,6 +7,7 @@ import { CheckIcon, CopyIcon, ShareIcon } from '@/components/Icons';
 import { Ring } from '@/components/Ring';
 import { Toast, useToast } from '@/components/Sheet';
 import { api, remember, shareLink, subscribeLive } from '@/components/client';
+import { dedicationLine } from '@/lib/dedication';
 import { site } from '@/lib/site';
 import { DEDICATION_LABELS, type AdminState, type AdminUnit } from '@/lib/types';
 
@@ -73,7 +74,7 @@ export function ManageView({ slug, initialKey, created: justCreated }: { slug: s
 
   const { campaign, counts } = state;
   const people = state.units.filter((u) => u.status !== 'free');
-  const shareText = `${campaign.title}\nחלוקת תהילים לעילוי נשמת ${site.honoree} ז״ל. בחרו פרק והצטרפו:`;
+  const shareText = `${campaign.title}\nחלוקת תהילים ${dedicationLine(campaign.dedication)}. בחרו פרק והצטרפו:`;
 
   return (
     <AppFrame title={created ? 'החלוקה נפתחה' : 'ניהול החלוקה'} back={`/c/${slug}`}>
@@ -245,7 +246,7 @@ function statusMessage(state: AdminState): string {
   const { campaign, counts } = state;
   return [
     `${campaign.title} · עדכון`,
-    `לעילוי נשמת ${site.honoree} ז״ל`,
+    dedicationLine(campaign.dedication),
     '',
     `נקראו ${counts.read} מתוך ${counts.total}.`,
     counts.free ? `נשארו ${counts.free} פנויים. מי שעוד לא לקח, זה הזמן:` : 'כל החלקים נלקחו. מי שעוד לא סיים, נשמח שתסמנו ״קראתי״.',

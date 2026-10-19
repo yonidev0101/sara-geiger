@@ -10,6 +10,7 @@ import { Ring } from '@/components/Ring';
 import { Sheet, Toast, useToast } from '@/components/Sheet';
 import { api, ApiError, getDeviceId, remember, shareLink, subscribeLive, timeAgo } from '@/components/client';
 import { hebNum, hebrewDate } from '@/lib/hebrew';
+import { dedicationLine } from '@/lib/dedication';
 import { site } from '@/lib/site';
 import { DEDICATION_LABELS, type CampaignState, type DedicationKind, type PublicUnit } from '@/lib/types';
 import { partsDone, unitHref } from '@/lib/units';
@@ -92,7 +93,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  const shareText = `${campaign.title}\nחלוקת תהילים לעילוי נשמת ${site.honoree} ז״ל.\n${
+  const shareText = `${campaign.title}\nחלוקת תהילים ${dedicationLine(campaign.dedication)}.\n${
     counts.free ? `נשארו ${counts.free} ${many} פנויים, בחרו ${one} והצטרפו:` : 'כל החלקים נלקחו. תודה לכולם!'
   }`;
   const share = () => shareLink(`${window.location.origin}/c/${slug}`, shareText);
@@ -112,7 +113,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
       <section className="card camp-head" aria-label="מצב החלוקה">
         <Ring read={counts.read} taken={counts.taken} total={counts.total} />
         <div className="grow">
-          <div className="eyebrow">לעילוי נשמת {site.honoree} ז״ל</div>
+          <div className="eyebrow">{dedicationLine(campaign.dedication)}</div>
           <h1 className="h1">{campaign.title}</h1>
           <div className="camp-meta">
             {counts.free > 0 ? `${counts.free} ${many} פנויים` : `כל ה${many} נלקחו`}
@@ -201,7 +202,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
           onConflict={async (msg) => { setSheet(null); toast.show(msg); await refresh(); }} />
       )}
       {sheet === 'info' && <InfoSheet state={state} slug={slug} isAdmin={isAdmin} one={one} many={many} onClose={() => setSheet(null)} />}
-      {celebrate && <Celebration books={campaign.completedRounds} onClose={() => setCelebrate(false)} onShare={share} />}
+      {celebrate && <Celebration dedication={dedicationLine(campaign.dedication)} books={campaign.completedRounds} onClose={() => setCelebrate(false)} onShare={share} />}
       <Toast message={toast.message} />
     </AppFrame>
   );
@@ -403,14 +404,14 @@ function InfoSheet({ state, slug, isAdmin, one, many, onClose }: { state: Campai
   );
 }
 
-function Celebration({ books, onClose, onShare }: { books: number; onClose: () => void; onShare: () => void }) {
+function Celebration({ dedication, books, onClose, onShare }: { dedication: string; books: number; onClose: () => void; onShare: () => void }) {
   return (
     <div className="backdrop center" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="celebrate" role="dialog" aria-modal="true" aria-label="הספר הושלם">
         <div className="glow"><LogoMark size={70} stroke={2.5} /></div>
         <div className="eyebrow">ספר תהילים שלם</div>
         <h2 className="h1">הספר הושלם!</h2>
-        <p>תודה לכל מי שקרא. ספר התהילים הושלם לעילוי נשמת <b>{site.honoree} ז״ל</b>{books > 1 ? `, כבר ${books} פעמים` : ''}. תנצב״ה.</p>
+        <p>תודה לכל מי שקרא. ספר התהילים הושלם <b>{dedication}</b>{books > 1 ? `, כבר ${books} פעמים` : ''}.</p>
         <button className="btn btn-block" onClick={onShare}><ShareIcon /> לשתף ולהמשיך לסבב הבא</button>
         <button className="btn btn-ghost btn-block" onClick={onClose}>סגירה</button>
       </div>

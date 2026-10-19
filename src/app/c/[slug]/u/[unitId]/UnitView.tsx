@@ -8,6 +8,7 @@ import { BookIcon, CheckIcon, ChevronIcon } from '@/components/Icons';
 import { Toast, useToast } from '@/components/Sheet';
 import { api, getDeviceId, subscribeLive } from '@/components/client';
 import { segmentsOf } from '@/lib/divisions';
+import { dedicationLine } from '@/lib/dedication';
 import { site } from '@/lib/site';
 import type { CampaignState, PublicUnit, ReaderUnit } from '@/lib/types';
 import { nextPart, partsDone } from '@/lib/units';
@@ -62,7 +63,7 @@ export function UnitView({ unit }: { unit: ReaderUnit }) {
   return (
     <AppFrame title={unit.label} back={`/c/${slug}`} dock={mine && next >= 0}>
       <section className="unit-head">
-        <div className="eyebrow">לעילוי נשמת {site.honoree} ז״ל</div>
+        <div className="eyebrow">{dedicationLine(unit.dedication)}</div>
         <h1 className="h1">{unit.label}</h1>
         <div className="muted">{unit.detail} · {unit.campaignTitle}</div>
       </section>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getState, UserError } from '@/lib/campaigns';
+import { dedicationLine } from '@/lib/dedication';
 import { site } from '@/lib/site';
 import { CampaignView } from './CampaignView';
 
@@ -19,9 +20,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const state = await load(slug);
   const { free, total } = state.counts;
+  const description = free
+    ? `${dedicationLine(state.campaign.dedication)} · נשארו ${free} מתוך ${total} פנויים. בחרו והצטרפו.`
+    : `${dedicationLine(state.campaign.dedication)} · כל החלקים נלקחו.`;
   return {
     title: state.campaign.title,
-    description: `חלוקת תהילים לעילוי נשמת ${site.honoree} ז״ל · ${free} מתוך ${total} עדיין פנויים. בחרו פרקים והצטרפו.`,
+    description,
+    openGraph: { title: `${state.campaign.title} · חלוקת תהילים`, description },
   };
 }
 

@@ -9,6 +9,7 @@ import { LogoMark } from '@/components/Logo';
 import { ReaderSettings, ReaderVerses, useReaderPrefs } from '@/components/ReaderText';
 import { api, getDeviceId } from '@/components/client';
 import { segmentsOf } from '@/lib/divisions';
+import { dedicationLine } from '@/lib/dedication';
 import { site } from '@/lib/site';
 import type { Verse } from '@/lib/text';
 import type { CampaignState, PublicUnit, ReaderUnit } from '@/lib/types';
@@ -70,7 +71,7 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
       <TopBar back={back} title={seg?.title} actions={<ReaderSettings prefs={prefs} />} />
       <main className="reader-main">
         <div className="reader-head">
-          <div className="eyebrow">לעילוי נשמת {site.honoree} ז״ל</div>
+          <div className="eyebrow">{dedicationLine(unit.dedication)}</div>
           <h1 className="h1">{seg?.title ?? unit.detail}</h1>
           <div className="muted" style={{ fontSize: 14 }}>
             {multi ? `${unit.label} · ${part + 1} מתוך ${segments.length}` : unit.campaignTitle}
@@ -84,7 +85,7 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
             {done === 'book' ? <div className="glow" style={{ alignSelf: 'center' }}><LogoMark size={64} stroke={2.5} /></div>
               : <div className="success-mark" style={{ alignSelf: 'center' }}><CheckIcon /></div>}
             <div className="q">{done === 'book' ? 'ספר התהילים הושלם!' : done === 'unit' ? `סיימת את ${multi ? unit.label : seg.title}. תודה!` : 'תודה!'}</div>
-            <div className="muted">יהי רצון שתהיה הקריאה לעילוי נשמת {site.honoree} ז״ל</div>
+            <div className="muted">יהי רצון שתהיה הקריאה {dedicationLine(unit.dedication)}</div>
             <Link className="btn btn-block" href={`/c/${slug}`}>חזרה לחלוקה</Link>
           </div>
         ) : mine ? (

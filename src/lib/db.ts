@@ -68,6 +68,8 @@ create table if not exists activity (
 );
 
 alter table campaigns add column if not exists release_days int;
+alter table campaigns add column if not exists dedication_kind text;
+alter table campaigns add column if not exists dedication_name text;
 alter table units add column if not exists progress int[] not null default '{}';
 
 create index if not exists activity_campaign_idx on activity (campaign_id, created_at desc);

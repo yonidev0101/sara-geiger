@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { AppFrame } from '@/components/AppShell';
 import { ChevronIcon } from '@/components/Icons';
 import { getStats, listPublicCampaigns } from '@/lib/campaigns';
+import { dedicationLine } from '@/lib/dedication';
 import { site } from '@/lib/site';
 import type { CampaignSummary } from '@/lib/types';
 import { ContinueReading } from './ContinueReading';
@@ -67,6 +68,7 @@ function CampaignRow({ c }: { c: CampaignSummary }) {
     <Link href={`/c/${c.slug}`} className="list-row">
       <div className="grow">
         <div className="title serif" style={{ fontSize: 18, fontWeight: 500 }}>{c.title}</div>
+        {c.dedication && <div className="sub" style={{ color: 'var(--gold-text)' }}>{dedicationLine(c.dedication)}</div>}
         <div className="sub">{c.kindLabel} · {c.counts.free > 0 ? `${c.counts.free} פנויים` : 'הכל נלקח'}</div>
         <div className="progress" style={{ marginTop: 10 }} aria-hidden="true">
           <div className="read" style={{ width: `${pct}%` }} />

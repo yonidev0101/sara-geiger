@@ -3,7 +3,23 @@ import { SwRegister } from '@/components/SwRegister';
 import { site } from '@/lib/site';
 import './globals.css';
 
+function siteUrl(): URL {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL;
+  if (explicit) return new URL(explicit);
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) return new URL(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+  return new URL(`http://localhost:${process.env.PORT ?? 3000}`);
+}
+
 export const metadata: Metadata = {
+  metadataBase: siteUrl(),
+  openGraph: {
+    type: 'website',
+    locale: 'he_IL',
+    siteName: site.brandName,
+    title: `${site.brandName} · לעילוי נשמת ${site.honoree} ז״ל`,
+    description: `חלוקת ספר תהילים משותפת לעילוי נשמת ${site.honoree} ז״ל. בוחרים פרק, קוראים ומסמנים.`,
+  },
+  twitter: { card: 'summary_large_image' },
   title: { default: `${site.brandName} · לעילוי נשמת ${site.honoree} ז״ל`, template: `%s · ${site.brandName}` },
   description: `חלוקת ספר תהילים משותפת לעילוי נשמת ${site.honoree} ז״ל. בוחרים פרקים, קוראים ומסמנים, ורואים יחד מה נשאר.`,
   applicationName: site.brandName,

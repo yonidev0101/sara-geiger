@@ -39,6 +39,8 @@ export interface PublicCampaign {
   isPublic: boolean;
   autoRenew: boolean;
   releaseDays: number | null;
+  /** The campaign's own dedication, shown up front instead of the default one. */
+  dedication: { kind: DedicationKind; name: string } | null;
 }
 
 export interface Counts {
@@ -77,6 +79,7 @@ export interface AdminState extends CampaignState {
 export interface CampaignSummary {
   slug: string;
   title: string;
+  dedication: { kind: DedicationKind; name: string } | null;
   kindLabel: string;
   openerName: string | null;
   round: number;
@@ -100,6 +103,7 @@ export interface MyUnit {
 }
 
 export interface ReaderUnit {
+  dedication: { kind: DedicationKind; name: string } | null;
   id: number;
   label: string;
   detail: string;
