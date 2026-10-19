@@ -275,7 +275,9 @@ function TakeSheet({ slug, units, maxFree, one, many, onClose, onDone, onConflic
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => setName(remember('name')), []);
+  useEffect(() => {
+    setName(remember('name'));
+  }, []);
 
   const options = [...new Set([1, 3, 5, 10, maxFree < 10 ? maxFree : 0])].filter((n) => n > 0 && n <= maxFree).sort((a, b) => a - b);
   const n = auto ? count : units.length;

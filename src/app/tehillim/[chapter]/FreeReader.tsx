@@ -10,7 +10,9 @@ import type { Verse } from '@/lib/text';
 
 export function FreeReader({ chapter, verses, credit }: { chapter: number; verses: Verse[]; credit: string }) {
   const prefs = useReaderPrefs();
-  useEffect(() => window.scrollTo(0, 0), []);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   return (
     <div className="reader-app">
       <TopBar back="/tehillim" title={`פרק ${hebNum(chapter)}`} actions={<ReaderSettings prefs={prefs} />} />

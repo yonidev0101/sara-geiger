@@ -1,5 +1,5 @@
 // Minimal offline support: static assets are cached; pages fall back to the cache when offline.
-const CACHE = 'mizmor-v1';
+const CACHE = 'mizmor-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => {

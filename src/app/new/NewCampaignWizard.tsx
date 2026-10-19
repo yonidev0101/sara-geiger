@@ -25,8 +25,12 @@ export function NewCampaignWizard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => setOpenerName(remember('name')), []);
-  useEffect(() => window.scrollTo(0, 0), [step]);
+  useEffect(() => {
+    setOpenerName(remember('name'));
+  }, []);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [step]);
 
   async function create() {
     setBusy(true);
