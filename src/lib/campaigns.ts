@@ -39,6 +39,7 @@ interface CampaignRow {
   release_days: number | null;
   dedication_kind: DedicationKind | null;
   dedication_name: string | null;
+  copies: number;
 }
 
 interface UnitRow {
@@ -55,12 +56,14 @@ interface UnitRow {
   taken_at: Date | null;
   read_at: Date | null;
   progress: number[];
+  copy: number;
 }
 
 const CAMPAIGN_COLS = `id, slug, admin_token, title, kind, split119, opener_name,
-  to_char(deadline, 'YYYY-MM-DD') as deadline, is_public, auto_renew, round, completed_rounds, status, release_days, dedication_kind, dedication_name`;
+  to_char(deadline, 'YYYY-MM-DD') as deadline, is_public, auto_renew, round, completed_rounds, status, release_days, dedication_kind, dedication_name, copies`;
 
-export const MAX_TAKE = 30;
+export const MAX_TAKE = 200;
+export const MAX_COPIES = 20;
 
 function clean(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
@@ -87,6 +90,7 @@ function toPublic(c: CampaignRow): PublicCampaign {
     autoRenew: c.auto_renew,
     releaseDays: c.release_days,
     dedication: mainDedication(c),
+    copies: c.copies ?? 1,
   };
 }
 
@@ -154,6 +158,7 @@ export interface CreateInput {
   openerName?: unknown;
   deadline?: unknown;
   isPublic?: unknown;
+  copies?: unknown;
   dedicationKind?: unknown;
   dedicationName?: unknown;
 }
@@ -168,7 +173,12 @@ export async function createCampaign(input: CreateInput): Promise<{ slug: string
     typeof input.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.deadline) ? input.deadline : null;
   const split119 = kind === 'chapters' && input.split119 === true;
   const dedicationName = clean(input.dedicationName, 80);
-  const units = buildUnits(kind, split119);
+  const copiesRaw = Number(input.copies ?? 1);
+  const copies = Number.isInteger(copiesRaw) && copiesRaw >= 1 && copiesRaw <= MAX_COPIES ? copiesRaw : 1;
+  const base = buildUnits(kind, split119);
+  const units = Array.from({ length: copies }, (_, c) =>
+    base.map((u) => ({ ...u, copy: c + 1, detail: copies > 1 ? `${u.detail} · תהילים ${c + 1}` : u.detail })),
+  ).flat();
   const adminToken = newToken();
 
   return tx(async (client) => {
@@ -179,22 +189,25 @@ export async function createCampaign(input: CreateInput): Promise<{ slug: string
       slug = newSlug();
     }
     const res = await client.query(
-      `insert into campaigns (slug, admin_token, title, kind, split119, opener_name, deadline, is_public, dedication_kind, dedication_name)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+      `insert into campaigns (slug, admin_token, title, kind, split119, opener_name, deadline, is_public, dedication_kind, dedication_name, copies)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
       [slug, adminToken, title, kind, split119, openerName, deadline, input.isPublic !== false,
-        dedicationName ? cleanDedicationKind(input.dedicationKind) : null, dedicationName],
+        dedicationName ? cleanDedicationKind(input.dedicationKind) : null, dedicationName, copies],
     );
     const id = res.rows[0].id as number;
-    const values: unknown[] = [];
-    const tuples = units.map((u, i) => {
-      const o = i * 7;
-      values.push(id, i, u.label, u.sublabel, u.detail, u.group, u.ref);
-      return `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7})`;
-    });
-    await client.query(
-      `insert into units (campaign_id, idx, label, sublabel, detail, group_label, ref) values ${tuples.join(', ')}`,
-      values,
-    );
+    // Insert in batches to stay well under Postgres's limit on query parameters.
+    for (let start = 0; start < units.length; start += 1000) {
+      const values: unknown[] = [];
+      const tuples = units.slice(start, start + 1000).map((u, j) => {
+        const o = j * 8;
+        values.push(id, start + j, u.label, u.sublabel, u.detail, u.group, u.ref, u.copy);
+        return `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8})`;
+      });
+      await client.query(
+        `insert into units (campaign_id, idx, label, sublabel, detail, group_label, ref, copy) values ${tuples.join(', ')}`,
+        values,
+      );
+    }
     return { slug, adminToken };
   });
 }
@@ -203,7 +216,7 @@ export async function createCampaign(input: CreateInput): Promise<{ slug: string
 
 async function loadUnits(campaignId: number): Promise<UnitRow[]> {
   return query<UnitRow>(
-    `select id, idx, label, sublabel, detail, group_label, ref, status, taker_name, taker_device, taken_at, read_at, progress
+    `select id, idx, label, sublabel, detail, group_label, ref, status, taker_name, taker_device, taken_at, read_at, progress, copy
      from units where campaign_id = $1 order by idx`,
     [campaignId],
   );
@@ -246,6 +259,7 @@ export async function getState(slug: string, device: unknown): Promise<CampaignS
       mine: !!dev && u.status !== 'free' && u.taker_device === dev,
       parts: segmentsOf(u.ref).length,
       progress: u.progress ?? [],
+      copy: u.copy ?? 1,
     })),
     dedications,
     counts: countUnits(units),
@@ -261,6 +275,7 @@ export async function listPublicCampaigns(limit = 12): Promise<CampaignSummary[]
     round: number;
     dedication_kind: DedicationKind | null;
     dedication_name: string | null;
+    copies: number;
     deadline: string | null;
     participants: number;
     free: number;
@@ -268,7 +283,7 @@ export async function listPublicCampaigns(limit = 12): Promise<CampaignSummary[]
     read: number;
     total: number;
   }>(
-    `select c.slug, c.title, c.kind, c.opener_name, c.round, c.dedication_kind, c.dedication_name, to_char(c.deadline, 'YYYY-MM-DD') as deadline,
+    `select c.slug, c.title, c.kind, c.opener_name, c.round, c.dedication_kind, c.dedication_name, c.copies, to_char(c.deadline, 'YYYY-MM-DD') as deadline,
        (select count(distinct device) from activity a where a.campaign_id = c.id and a.device is not null)::int as participants,
        count(*) filter (where u.status = 'free')::int as free,
        count(*) filter (where u.status = 'taken')::int as taken,
@@ -285,6 +300,7 @@ export async function listPublicCampaigns(limit = 12): Promise<CampaignSummary[]
     slug: r.slug,
     title: r.title,
     dedication: mainDedication(r),
+    copies: r.copies ?? 1,
     kindLabel: kindLabel(r.kind),
     openerName: r.opener_name,
     round: r.round,
@@ -401,8 +417,9 @@ async function finishUnits(
   }
   const left = await client.query(`select count(*)::int as n from units where campaign_id = $1 and status <> 'read'`, [c.id]);
   if (left.rows[0].n === 0) {
-    await client.query('update campaigns set completed_rounds = completed_rounds + 1 where id = $1', [c.id]);
-    await logActivity(client, c.id, 'complete', null, null, c.completed_rounds + 1);
+    const books = c.copies ?? 1;
+    await client.query('update campaigns set completed_rounds = completed_rounds + $2 where id = $1', [c.id, books]);
+    await logActivity(client, c.id, 'complete', null, null, c.completed_rounds + books);
     if (c.auto_renew) await startNewRound(client, c.id);
     return { completed: true, round: c.auto_renew ? c.round + 1 : c.round };
   }
@@ -543,6 +560,8 @@ export interface AdminInput {
   isPublic?: unknown;
   autoRenew?: unknown;
   releaseDays?: unknown;
+  dedicationKind?: unknown;
+  dedicationName?: unknown;
 }
 
 export async function adminAction(slug: string, input: AdminInput): Promise<void> {
@@ -586,6 +605,14 @@ export async function adminAction(slug: string, input: AdminInput): Promise<void
         'update campaigns set title = $1, deadline = $2, is_public = $3, auto_renew = $4, release_days = $5 where id = $6',
         [title, deadline, input.isPublic !== false, input.autoRenew !== false, releaseDays, c.id],
       );
+      if ('dedicationName' in input) {
+        const name = clean(input.dedicationName, 80);
+        await query('update campaigns set dedication_kind = $1, dedication_name = $2 where id = $3', [
+          name ? cleanDedicationKind(input.dedicationKind) : null,
+          name,
+          c.id,
+        ]);
+      }
       break;
     }
     default:
@@ -630,12 +657,15 @@ export async function getMyUnits(device: unknown): Promise<MyUnit[]> {
     detail: string;
     ref: string;
     progress: number[];
+    group_label: string;
+    copy: number;
+    kind: Kind;
     status: 'taken' | 'read';
     slug: string;
     title: string;
     cstatus: string;
   }>(
-    `select u.id, u.label, u.sublabel, u.detail, u.ref, u.progress, u.status, c.slug, c.title, c.status as cstatus
+    `select u.id, u.label, u.sublabel, u.detail, u.ref, u.progress, u.group_label, u.copy, c.kind, u.status, c.slug, c.title, c.status as cstatus
      from units u join campaigns c on c.id = u.campaign_id
      where u.taker_device = $1 and u.status in ('taken', 'read')
      order by (u.status = 'read'), c.created_at desc, u.idx
@@ -650,6 +680,9 @@ export async function getMyUnits(device: unknown): Promise<MyUnit[]> {
     ref: r.ref,
     parts: segmentsOf(r.ref).length,
     progress: r.progress ?? [],
+    group: r.group_label,
+    copy: r.copy ?? 1,
+    campaignKind: r.kind,
     status: r.status,
     campaignSlug: r.slug,
     campaignTitle: r.title,

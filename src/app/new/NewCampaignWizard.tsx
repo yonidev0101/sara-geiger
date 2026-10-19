@@ -22,6 +22,7 @@ export function NewCampaignWizard() {
   const [split119, setSplit119] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   const [forSara, setForSara] = useState(true);
+  const [copies, setCopies] = useState(1);
   const [dedicationKind, setDedicationKind] = useState<DedicationKind>('ilui');
   const [dedicationName, setDedicationName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -40,7 +41,7 @@ export function NewCampaignWizard() {
     try {
       if (openerName.trim()) remember('name', openerName.trim());
       const res = await api<{ slug: string; adminToken: string }>('/api/campaigns', {
-        title, kind, split119, openerName, deadline: deadline || null, isPublic,
+        title, kind, copies, split119, openerName, deadline: deadline || null, isPublic,
         dedicationKind, dedicationName: forSara ? '' : dedicationName,
       });
       remember(`admin.${res.slug}`, res.adminToken);
@@ -72,6 +73,19 @@ export function NewCampaignWizard() {
               </span>
             </button>
           ))}
+          <div className="list" style={{ marginTop: 16 }}>
+            <div className="stepper">
+              <span>
+                <span style={{ display: 'block', fontWeight: 600 }}>כמה ספרי תהילים?</span>
+                <span className="muted" style={{ fontSize: 13 }}>{copies === 1 ? 'ספר אחד שלם' : `${copies} ספרים שלמים, כל אחד בלשונית משלו`}</span>
+              </span>
+              <span className="ctrl">
+                <button type="button" aria-label="ספר נוסף" onClick={() => setCopies(Math.min(20, copies + 1))} disabled={copies >= 20}>+</button>
+                <b aria-live="polite">{copies}</b>
+                <button type="button" aria-label="ספר אחד פחות" onClick={() => setCopies(Math.max(1, copies - 1))} disabled={copies <= 1}>−</button>
+              </span>
+            </div>
+          </div>
         </>
       )}
 

@@ -69,7 +69,7 @@ function CampaignRow({ c }: { c: CampaignSummary }) {
       <div className="grow">
         <div className="title serif" style={{ fontSize: 18, fontWeight: 500 }}>{c.title}</div>
         {c.dedication && <div className="sub" style={{ color: 'var(--gold-text)' }}>{dedicationLine(c.dedication)}</div>}
-        <div className="sub">{c.kindLabel} · {c.counts.free > 0 ? `${c.counts.free} פנויים` : 'הכל נלקח'}</div>
+        <div className="sub">{c.kindLabel}{c.copies > 1 ? ` · ${c.copies} ספרים` : ''} · {c.counts.free > 0 ? `${c.counts.free} פנויים` : 'הכל נלקח'}</div>
         <div className="progress" style={{ marginTop: 10 }} aria-hidden="true">
           <div className="read" style={{ width: `${pct}%` }} />
           <div className="taken" style={{ width: `${takenPct}%` }} />

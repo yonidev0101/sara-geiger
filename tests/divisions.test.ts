@@ -52,3 +52,15 @@ test('larger hebrew numerals for years', () => {
   assert.equal(hebNum(787), 'תשפ״ז');
   assert.equal(hebNum(176), 'קע״ו');
 });
+
+test('chapters taken from one book are grouped into a single entry', async () => {
+  const { groupMine } = await import('../src/lib/units.ts');
+  const u = (id: number, group: string, copy = 1, parts = 1, status = 'taken') => ({ id, group, copy, parts, status });
+  const entries = groupMine([u(1, 'ספר ראשון'), u(2, 'ספר ראשון', 1, 1, 'read'), u(3, 'ספר שני'), u(4, 'ספר ראשון', 2)], () => true);
+  assert.equal(entries.length, 3);
+  assert.equal(entries[0].type, 'book');
+  assert.equal(entries[0].type === 'book' && entries[0].units.length, 2);
+  assert.equal(entries[1].type, 'unit'); // a single chapter stays a chapter
+  const multi = groupMine([u(5, 'ימי החודש', 1, 9), u(6, 'ימי החודש', 1, 6)], () => false);
+  assert.ok(multi.every((e) => e.type === 'unit'));
+});

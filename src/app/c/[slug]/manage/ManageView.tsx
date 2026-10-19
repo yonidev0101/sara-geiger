@@ -9,7 +9,7 @@ import { Toast, useToast } from '@/components/Sheet';
 import { api, remember, shareLink, subscribeLive } from '@/components/client';
 import { dedicationLine } from '@/lib/dedication';
 import { site } from '@/lib/site';
-import { DEDICATION_LABELS, type AdminState, type AdminUnit } from '@/lib/types';
+import { DEDICATION_LABELS, type AdminState, type AdminUnit, type DedicationKind } from '@/lib/types';
 
 export function ManageView({ slug, initialKey, created: justCreated }: { slug: string; initialKey: string; created: boolean }) {
   const [created, setCreated] = useState(justCreated);
@@ -207,8 +207,28 @@ function Settings({ state, onSave }: { state: AdminState; onSave: (v: Record<str
   const [isPublic, setIsPublic] = useState(c.isPublic);
   const [autoRenew, setAutoRenew] = useState(c.autoRenew);
   const [releaseDays, setReleaseDays] = useState(c.releaseDays ? String(c.releaseDays) : '');
+  const [forSara, setForSara] = useState(!c.dedication);
+  const [dedicationKind, setDedicationKind] = useState<DedicationKind>(c.dedication?.kind ?? 'ilui');
+  const [dedicationName, setDedicationName] = useState(c.dedication?.name ?? '');
   return (
-    <form className="card" onSubmit={(e) => { e.preventDefault(); onSave({ title, deadline: deadline || null, isPublic, autoRenew, releaseDays: releaseDays ? Number(releaseDays) : null }); }}>
+    <form className="card" onSubmit={(e) => { e.preventDefault(); onSave({
+      title, deadline: deadline || null, isPublic, autoRenew, releaseDays: releaseDays ? Number(releaseDays) : null,
+      dedicationKind, dedicationName: forSara ? '' : dedicationName,
+    }); }}>
+      <div className="field">
+        <span className="label">למי מוקדשת החלוקה</span>
+        <div className="pills">
+          <button type="button" className="pill" aria-pressed={forSara} onClick={() => setForSara(true)}>{site.honoree} ז״ל</button>
+          {(Object.keys(DEDICATION_LABELS) as DedicationKind[]).map((k) => (
+            <button type="button" key={k} className="pill" aria-pressed={!forSara && dedicationKind === k}
+              onClick={() => { setForSara(false); setDedicationKind(k); }}>{DEDICATION_LABELS[k]}…</button>
+          ))}
+        </div>
+        {!forSara && (
+          <input className="input" maxLength={80} value={dedicationName} onChange={(e) => setDedicationName(e.target.value)}
+            placeholder="השם" aria-label={DEDICATION_LABELS[dedicationKind]} />
+        )}
+      </div>
       <div className="field">
         <label htmlFor="s-title">שם החלוקה</label>
         <input id="s-title" className="input" maxLength={80} value={title} onChange={(e) => setTitle(e.target.value)} />

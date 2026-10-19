@@ -113,27 +113,33 @@ export function ogCampaign(c: {
   total: number;
   unitWord: string;
   participants: number;
-  dedication: string;
+  /** The campaign's dedication, which leads the image: "להצלחת" + "זלדה בת רות". */
+  dedicationLabel: string;
+  dedicationName: string;
 }) {
-  const titleLines = wrap(c.title, 20, 2);
-  const titleSize = titleLines.length > 1 ? 76 : c.title.length > 14 ? 84 : 96;
+  const nameLines = wrap(c.dedicationName, 18, 2);
+  const nameSize = nameLines.length > 1 ? 74 : c.dedicationName.length > 13 ? 84 : 100;
   const readPct = c.total ? (c.read / c.total) * 100 : 0;
   const takenPct = c.total ? (c.taken / c.total) * 100 : 0;
   const status = c.free > 0 ? `נשארו ${c.free} ${c.unitWord} פנויים · בחרו והצטרפו` : `כל ה${c.unitWord} נלקחו · ${Math.round(readPct)}% נקרא`;
   return render(
     <Frame>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', fontFamily: 'Sans', fontWeight: 600, fontSize: 26, color: C.goldText, background: C.sandSoft, borderRadius: 999, padding: '8px 22px' }}>
           {he(c.kindLabel)}
         </div>
-        <Brand />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+          <Brand size={30} />
+          <div style={{ fontFamily: 'Sans', fontSize: 22, color: C.muted }}>{he(`לעילוי נשמת ${site.honoree} ז״ל`)}</div>
+        </div>
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
-        <div style={{ fontFamily: 'Sans', fontWeight: 600, fontSize: 32, color: C.goldText, marginBottom: 6 }}>{he(c.dedication)}</div>
-        {titleLines.map((line, i) => (
-          <div key={i} style={{ fontFamily: 'Serif', fontWeight: 500, fontSize: titleSize, color: C.ink, lineHeight: 1.12 }}>{he(line)}</div>
+        <div style={{ fontFamily: 'Sans', fontWeight: 600, fontSize: 34, color: C.goldText }}>{he(c.dedicationLabel)}</div>
+        {nameLines.map((line, i) => (
+          <div key={i} style={{ fontFamily: 'Serif', fontWeight: 500, fontSize: nameSize, color: C.ink, lineHeight: 1.1 }}>{he(line)}</div>
         ))}
+        <div style={{ fontFamily: 'Serif', fontSize: 36, color: C.inkSoft, marginTop: 10 }}>{he(wrap(c.title, 40, 1)[0])}</div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

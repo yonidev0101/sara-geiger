@@ -20,6 +20,8 @@ export interface PublicUnit {
   status: UnitStatus;
   takerName: string | null;
   mine: boolean;
+  /** Which copy of the book this unit belongs to, when a campaign divides several books (1-based). */
+  copy: number;
   /** Number of chapters (or chapter parts) in this unit. */
   parts: number;
   /** Indexes of the parts the taker has marked as read. */
@@ -39,6 +41,8 @@ export interface PublicCampaign {
   isPublic: boolean;
   autoRenew: boolean;
   releaseDays: number | null;
+  /** How many complete books of Tehillim this campaign divides. */
+  copies: number;
   /** The campaign's own dedication, shown up front instead of the default one. */
   dedication: { kind: DedicationKind; name: string } | null;
 }
@@ -79,6 +83,7 @@ export interface AdminState extends CampaignState {
 export interface CampaignSummary {
   slug: string;
   title: string;
+  copies: number;
   dedication: { kind: DedicationKind; name: string } | null;
   kindLabel: string;
   openerName: string | null;
@@ -96,6 +101,9 @@ export interface MyUnit {
   ref: string;
   parts: number;
   progress: number[];
+  group: string;
+  copy: number;
+  campaignKind: Kind;
   status: 'taken' | 'read';
   campaignSlug: string;
   campaignTitle: string;

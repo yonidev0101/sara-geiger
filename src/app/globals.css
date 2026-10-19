@@ -336,3 +336,24 @@ details.more summary::-webkit-details-marker { display: none; }
   .btn:hover { opacity: .93; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Whole-book selection and several books */
+.group-pick { border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); border-radius: 999px; font-size: 12.5px; font-weight: 600; padding: 4px 12px; min-height: 30px; }
+.group-pick[aria-pressed='true'] { background: var(--ink); color: var(--parchment); border-color: var(--ink); }
+.copy-tabs { display: flex; gap: 8px; overflow-x: auto; margin: 0 -20px 12px; padding: 2px 20px; scrollbar-width: none; }
+.copy-tabs::-webkit-scrollbar { display: none; }
+.copy-tabs button { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 84px; padding: 8px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--paper); }
+.copy-tabs button span { font-family: var(--serif); font-size: 16px; }
+.copy-tabs button small { font-size: 11.5px; color: var(--muted); }
+.copy-tabs button[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--parchment); }
+.copy-tabs button[aria-pressed='true'] small { color: #C9CFDA; }
+.stepper { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
+.stepper .ctrl { display: flex; align-items: center; gap: 14px; }
+.stepper button { width: 40px; height: 40px; border-radius: 20px; border: 1px solid var(--line-strong); background: var(--paper); font-size: 22px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.stepper button:disabled { opacity: .35; }
+.stepper b { font-family: var(--serif); font-size: 24px; font-weight: 500; min-width: 28px; text-align: center; }
+
+/* A campaign dedicated to someone else: their name leads, Sara stays as a quiet line */
+.dedication-hero { padding: 18px 8px 18px; }
+.dedication-hero .hero-name { font-size: 36px; }
+.memorial-note { text-align: center; font-size: 12.5px; color: var(--muted); margin: 26px 0 0; }

@@ -13,7 +13,7 @@ import { dedicationLine } from '@/lib/dedication';
 import { site } from '@/lib/site';
 import type { Verse } from '@/lib/text';
 import type { CampaignState, PublicUnit, ReaderUnit } from '@/lib/types';
-import { nextPart } from '@/lib/units';
+import { bookHref, nextPart } from '@/lib/units';
 
 type Done = null | 'part' | 'unit' | 'book';
 
@@ -24,8 +24,10 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
   const segments = segmentsOf(unit.ref);
   const seg = segments[part];
   const multi = segments.length > 1;
-  const back = multi ? `/c/${slug}/u/${unit.id}` : `/c/${slug}`;
   const [me, setMe] = useState<PublicUnit | null>(null);
+  const [siblings, setSiblings] = useState<PublicUnit[]>([]);
+  const inBook = !multi && siblings.length > 1;
+  const back = multi ? `/c/${slug}/u/${unit.id}` : inBook && me ? bookHref(slug, me.group, me.copy) : `/c/${slug}`;
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Done>(null);
   const [error, setError] = useState('');
@@ -33,7 +35,14 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
   useEffect(() => {
     window.scrollTo(0, 0);
     api<CampaignState>(`/api/c/${slug}?device=${getDeviceId()}`)
-      .then((s) => setMe(s.units.find((u) => u.id === unit.id) ?? null))
+      .then((s) => {
+        const self = s.units.find((u) => u.id === unit.id) ?? null;
+        setMe(self);
+        // Other single chapters this person took from the same book, in order.
+        if (self && s.campaign.kind === 'chapters') {
+          setSiblings(s.units.filter((u) => u.mine && u.group === self.group && u.copy === self.copy));
+        }
+      })
       .catch(() => {});
   }, [slug, unit.id]);
 
@@ -50,6 +59,12 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
         });
         if (isRead) {
           if (res.completed) return setDone('book');
+          if (inBook) {
+            const after = siblings.find((u) => u.id !== unit.id && u.status === 'taken' && u.idx > (me?.idx ?? 0))
+              ?? siblings.find((u) => u.id !== unit.id && u.status === 'taken');
+            if (after) return router.push(`/c/${slug}/read/${after.id}`);
+            return setDone('unit');
+          }
           if (res.unitRead) return setDone('unit');
           const next = nextPart({ status: 'taken', parts: segments.length, progress: res.progress });
           if (next >= 0) return router.push(`/c/${slug}/read/${unit.id}?p=${next}`);
@@ -74,7 +89,8 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
           <div className="eyebrow">{dedicationLine(unit.dedication)}</div>
           <h1 className="h1">{seg?.title ?? unit.detail}</h1>
           <div className="muted" style={{ fontSize: 14 }}>
-            {multi ? `${unit.label} · ${part + 1} מתוך ${segments.length}` : unit.campaignTitle}
+            {multi ? `${unit.label} · ${part + 1} מתוך ${segments.length}`
+              : inBook && me ? `${me.group} · ${siblings.findIndex((u) => u.id === unit.id) + 1} מתוך ${siblings.length}` : unit.campaignTitle}
           </div>
         </div>
 
@@ -84,7 +100,7 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
           <div className="reader-end">
             {done === 'book' ? <div className="glow" style={{ alignSelf: 'center' }}><LogoMark size={64} stroke={2.5} /></div>
               : <div className="success-mark" style={{ alignSelf: 'center' }}><CheckIcon /></div>}
-            <div className="q">{done === 'book' ? 'ספר התהילים הושלם!' : done === 'unit' ? `סיימת את ${multi ? unit.label : seg.title}. תודה!` : 'תודה!'}</div>
+            <div className="q">{done === 'book' ? 'ספר התהילים הושלם!' : done === 'unit' ? `סיימת את ${multi ? unit.label : inBook && me ? me.group : seg.title}. תודה!` : 'תודה!'}</div>
             <div className="muted">יהי רצון שתהיה הקריאה {dedicationLine(unit.dedication)}</div>
             <Link className="btn btn-block" href={`/c/${slug}`}>חזרה לחלוקה</Link>
           </div>
@@ -111,6 +127,7 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
             </div>
           </div>
         )}
+        {unit.dedication && <p className="memorial-note">{site.brandName} · לעילוי נשמת {site.honoree} ז״ל</p>}
         <p className="credit">{credit}</p>
       </main>
     </div>

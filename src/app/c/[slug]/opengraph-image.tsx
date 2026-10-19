@@ -1,6 +1,6 @@
 import { getState } from '@/lib/campaigns';
 import { ogCampaign, ogDefault, OG_SIZE } from '@/lib/og';
-import { dedicationLine } from '@/lib/dedication';
+import { dedicationParts } from '@/lib/dedication';
 import { site } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,8 @@ export default async function Image({ params }: { params: Promise<{ slug: string
       ...s.counts,
       unitWord: s.campaign.kind === 'chapters' ? 'פרקים' : 'חלקים',
       participants: s.participants,
-      dedication: dedicationLine(s.campaign.dedication),
+      dedicationLabel: dedicationParts(s.campaign.dedication).label,
+      dedicationName: dedicationParts(s.campaign.dedication).name,
     });
   } catch {
     return ogDefault();

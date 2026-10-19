@@ -6,7 +6,7 @@ import { AppFrame } from '@/components/AppShell';
 import { CheckIcon, ChevronIcon } from '@/components/Icons';
 import { api, getDeviceId } from '@/components/client';
 import type { MyUnit } from '@/lib/types';
-import { partsDone, unitHref } from '@/lib/units';
+import { bookHref, groupMine, partsDone, unitHref, type MineEntry } from '@/lib/units';
 
 export function MineView() {
   const [units, setUnits] = useState<MyUnit[] | null>(null);
@@ -18,8 +18,11 @@ export function MineView() {
       .catch(() => setUnits([]));
   }, []);
 
-  const open = units?.filter((u) => u.status === 'taken') ?? [];
-  const read = units?.filter((u) => u.status === 'read') ?? [];
+  // Group first, so a book that is half read stays one entry under "לקריאה".
+  const entries = groupMine(units ?? [], (u) => u.campaignKind === 'chapters');
+  const isOpen = (e: (typeof entries)[number]) => (e.type === 'unit' ? e.unit.status === 'taken' : e.units.some((u) => u.status === 'taken'));
+  const open = entries.filter(isOpen);
+  const read = entries.filter((e) => !isOpen(e));
 
   return (
     <AppFrame title="הקריאה שלי">
@@ -34,7 +37,7 @@ export function MineView() {
         <>
           <div className="section-label"><span>לקריאה</span><span>{open.length}</span></div>
           {open.length ? (
-            <div className="list">{open.map((u) => <UnitRow key={u.id} u={u} />)}</div>
+            <div className="list">{rows(open)}</div>
           ) : (
             <div className="banner">קראת הכל. תודה רבה!</div>
           )}
@@ -45,12 +48,37 @@ export function MineView() {
                 <span>נקראו ({read.length})</span>
                 <span>{showRead ? 'הסתרה' : 'הצגה'}</span>
               </button>
-              {showRead && <div className="list">{read.map((u) => <UnitRow key={u.id} u={u} />)}</div>}
+              {showRead && <div className="list">{rows(read)}</div>}
             </>
           )}
         </>
       )}
     </AppFrame>
+  );
+}
+
+function rows(entries: MineEntry<MyUnit>[]) {
+  return entries.map((e) =>
+    e.type === 'unit' ? <UnitRow key={e.unit.id} u={e.unit} /> : <BookRow key={`${e.units[0].campaignSlug}|${e.copy}|${e.group}`} units={e.units} />,
+  );
+}
+
+function BookRow({ units }: { units: MyUnit[] }) {
+  const u = units[0];
+  const read = units.filter((x) => x.status === 'read').length;
+  const done = read === units.length;
+  return (
+    <Link href={bookHref(u.campaignSlug, u.group, u.copy)} className="list-row">
+      <span className="badge-num" style={done ? { background: 'var(--ink)', color: 'var(--parchment)' } : undefined}>
+        {done ? <CheckIcon /> : `${read}/${units.length}`}
+      </span>
+      <span className="grow">
+        <span className="title" style={{ display: 'block' }}>{u.group}{u.detail.includes('· תהילים') ? ` · תהילים ${u.copy}` : ''}</span>
+        <span className="sub">{u.campaignTitle}{done ? '' : ` · ${read} מתוך ${units.length} פרקים`}</span>
+        {!done && <div className="progress gold" style={{ marginTop: 8 }} aria-hidden="true"><div className="read" style={{ width: `${(read / units.length) * 100}%` }} /></div>}
+      </span>
+      <span className="chev"><ChevronIcon /></span>
+    </Link>
   );
 }
 

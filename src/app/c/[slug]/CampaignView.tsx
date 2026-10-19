@@ -10,10 +10,10 @@ import { Ring } from '@/components/Ring';
 import { Sheet, Toast, useToast } from '@/components/Sheet';
 import { api, ApiError, getDeviceId, remember, shareLink, subscribeLive, timeAgo } from '@/components/client';
 import { hebNum, hebrewDate } from '@/lib/hebrew';
-import { dedicationLine } from '@/lib/dedication';
+import { dedicationLine, dedicationParts } from '@/lib/dedication';
 import { site } from '@/lib/site';
 import { DEDICATION_LABELS, type CampaignState, type DedicationKind, type PublicUnit } from '@/lib/types';
-import { partsDone, unitHref } from '@/lib/units';
+import { bookHref, groupMine, partsDone, unitHref } from '@/lib/units';
 
 type Filter = 'all' | 'free';
 
@@ -22,6 +22,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
   const [state, setState] = useState(initial);
   const [selected, setSelected] = useState<number[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
+  const [copy, setCopy] = useState(1);
   const [sheet, setSheet] = useState<null | 'take' | 'auto' | 'info'>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -60,15 +61,23 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
   const active = campaign.status === 'active';
   const mine = units.filter((u) => u.mine);
 
+  const copies = campaign.copies ?? 1;
   const groups = useMemo(() => {
-    const visible = units.filter((u) => filter === 'all' || u.status === 'free');
+    const visible = units.filter((u) => (copies === 1 || u.copy === copy) && (filter === 'all' || u.status === 'free'));
     const map = new Map<string, PublicUnit[]>();
     for (const u of visible) {
       if (!map.has(u.group)) map.set(u.group, []);
       map.get(u.group)!.push(u);
     }
     return [...map.entries()];
-  }, [units, filter]);
+  }, [units, filter, copies, copy]);
+
+  /** Selects every free chapter of a book in one tap (or clears them if they are all selected). */
+  function toggleGroup(list: PublicUnit[]) {
+    const free = list.filter((u) => u.status === 'free').map((u) => u.id);
+    const allSelected = free.every((id) => selected.includes(id));
+    setSelected((sel) => (allSelected ? sel.filter((id) => !free.includes(id)) : [...new Set([...sel, ...free])]));
+  }
 
   function onUnit(u: PublicUnit) {
     if (u.status === 'free') {
@@ -86,6 +95,11 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
     if (ids.length === 1) {
       const u = units.find((x) => x.id === ids[0]);
       router.push(unitHref(slug, { id: ids[0], parts: u?.parts ?? 1 }));
+      return;
+    }
+    const taken = units.filter((u) => ids.includes(u.id));
+    if (isChapters && taken.every((u) => u.group === taken[0].group && u.copy === taken[0].copy)) {
+      router.push(bookHref(slug, taken[0].group, taken[0].copy));
       return;
     }
     toast.show(`${ids.length} ${many} נשמרו על שמך`);
@@ -110,12 +124,20 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
         </>
       }
     >
+      {campaign.dedication && (
+        <section className="hero dedication-hero" aria-label="הקדשה">
+          <div className="eyebrow">{dedicationParts(campaign.dedication).label}</div>
+          <div className="hero-name">{campaign.dedication.name}</div>
+        </section>
+      )}
+
       <section className="card camp-head" aria-label="מצב החלוקה">
         <Ring read={counts.read} taken={counts.taken} total={counts.total} />
         <div className="grow">
-          <div className="eyebrow">{dedicationLine(campaign.dedication)}</div>
+          {!campaign.dedication && <div className="eyebrow">{dedicationLine(null)}</div>}
           <h1 className="h1">{campaign.title}</h1>
           <div className="camp-meta">
+            {copies > 1 && `${copies} ספרי תהילים · `}
             {counts.free > 0 ? `${counts.free} ${many} פנויים` : `כל ה${many} נלקחו`}
             {state.participants > 0 && ` · ${state.participants} משתתפים`}
           </div>
@@ -129,14 +151,42 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
         <>
           <div className="section-label"><span>הקריאה שלי</span><span>{mine.filter((u) => u.status === 'read').length}/{mine.length}</span></div>
           <div className="mine-strip">
-            {mine.map((u) => <MineCard key={u.id} slug={slug} u={u} />)}
+            {groupMine(mine, () => isChapters).map((e) =>
+              e.type === 'unit' ? <MineCard key={e.unit.id} slug={slug} u={e.unit} /> : <BookCard key={`${e.copy}|${e.group}`} slug={slug} copies={copies} {...e} />,
+            )}
           </div>
         </>
       )}
 
       <div className="section-label" style={{ marginBottom: 12 }}>
         <span>{active ? `בחרו ${many} לקריאה` : `ה${many}`}</span>
+        {active && isChapters && (() => {
+          const all = groups.flatMap(([, list]) => list);
+          const free = all.filter((u) => u.status === 'free');
+          if (free.length < 2) return null;
+          const allOn = free.every((u) => selected.includes(u.id));
+          return (
+            <button className="text-btn" style={{ padding: 0, fontSize: 13 }} onClick={() => toggleGroup(all)}>
+              {allOn ? 'ביטול הבחירה' : free.length === all.length ? 'בחירת כל התהילים' : `בחירת כל הפנויים (${free.length})`}
+            </button>
+          );
+        })()}
       </div>
+      {copies > 1 && (
+        <div className="copy-tabs" role="group" aria-label="ספר תהילים">
+          {Array.from({ length: copies }, (_, i) => i + 1).map((n) => {
+            const list = units.filter((u) => u.copy === n);
+            const pct = list.length ? Math.round((list.filter((u) => u.status === 'read').length / list.length) * 100) : 0;
+            const sel = units.filter((u) => u.copy === n && selected.includes(u.id)).length;
+            return (
+              <button key={n} aria-pressed={copy === n} onClick={() => setCopy(n)}>
+                <span>תהילים {n}</span>
+                <small>{sel ? `${sel} נבחרו` : `${pct}%`}</small>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="seg" role="group" aria-label="תצוגה">
         <button aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>הכל</button>
         <button aria-pressed={filter === 'free'} onClick={() => setFilter('free')}>פנויים ({counts.free})</button>
@@ -151,8 +201,14 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
             <div key={group}>
               <div className="group-title">
                 <span>{group}</span>
-                <span className="line" />
                 {plain.length > 0 && <span className="range">{plain[0].label}–{plain[plain.length - 1].label}</span>}
+                <span className="line" />
+                {active && list.some((u) => u.status === 'free') && (
+                  <button className="group-pick" onClick={() => toggleGroup(list)}
+                    aria-pressed={list.filter((u) => u.status === 'free').every((u) => selected.includes(u.id))}>
+                    {list.filter((u) => u.status === 'free').every((u) => selected.includes(u.id)) ? 'ביטול' : 'בחירת הספר'}
+                  </button>
+                )}
               </div>
               <div className="grid">
                 {list.map((u) => <Cell key={u.id} u={u} selected={selected.includes(u.id)} onClick={() => onUnit(u)} />)}
@@ -202,6 +258,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
           onConflict={async (msg) => { setSheet(null); toast.show(msg); await refresh(); }} />
       )}
       {sheet === 'info' && <InfoSheet state={state} slug={slug} isAdmin={isAdmin} one={one} many={many} onClose={() => setSheet(null)} />}
+      {campaign.dedication && <p className="memorial-note">{site.brandName} · לעילוי נשמת {site.honoree} ז״ל</p>}
       {celebrate && <Celebration dedication={dedicationLine(campaign.dedication)} books={campaign.completedRounds} onClose={() => setCelebrate(false)} onShare={share} />}
       <Toast message={toast.message} />
     </AppFrame>
@@ -218,6 +275,18 @@ function MineCard({ slug, u }: { slug: string; u: PublicUnit }) {
       {u.parts > 1 && (
         <div className="progress" aria-hidden="true"><div className="read" style={{ width: `${(done / u.parts) * 100}%` }} /></div>
       )}
+    </Link>
+  );
+}
+
+function BookCard({ slug, group, copy, copies, units }: { slug: string; group: string; copy: number; copies: number; units: PublicUnit[] }) {
+  const read = units.filter((u) => u.status === 'read').length;
+  const done = read === units.length;
+  return (
+    <Link href={bookHref(slug, group, copy)} className={`mine-card ${done ? 'done' : ''}`}>
+      <div className="t">{copies > 1 ? `${group} · ${copy}` : group}</div>
+      <div className="s">{done ? 'נקרא כולו, תודה!' : `${read} מתוך ${units.length} פרקים`}</div>
+      <div className="progress" aria-hidden="true"><div className="read" style={{ width: `${(read / units.length) * 100}%` }} /></div>
     </Link>
   );
 }
@@ -325,6 +394,8 @@ function TakeSheet({ slug, units, maxFree, one, many, onClose, onDone, onConflic
               <button type="button" key={o} className="pill" style={{ minWidth: 56, fontSize: 16 }} aria-pressed={count === o} onClick={() => setCount(o)}>{o}</button>
             ))}
           </div>
+        ) : n > 12 ? (
+          <div className="banner">{summarize(units)}</div>
         ) : n > 1 ? (
           <div className="pills">
             {units.map((u) => <span key={u.id} className="chip" style={{ fontSize: 14, fontFamily: 'var(--serif)' }}>{u.sublabel ? `${u.sublabel} ${u.label}` : u.label}</span>)}
@@ -417,4 +488,14 @@ function Celebration({ dedication, books, onClose, onShare }: { dedication: stri
       </div>
     </div>
   );
+}
+
+/** "ספר ראשון (41 פרקים) · ספר שני (31 פרקים)" for a large selection. */
+function summarize(units: PublicUnit[]): string {
+  const byGroup = new Map<string, number>();
+  for (const u of units) {
+    const key = u.copy > 1 || units.some((x) => x.copy !== u.copy) ? `${u.group}, תהילים ${u.copy}` : u.group;
+    byGroup.set(key, (byGroup.get(key) ?? 0) + 1);
+  }
+  return [...byGroup.entries()].map(([g, n]) => `${g} (${n})`).join(' · ');
 }
