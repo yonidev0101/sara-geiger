@@ -8,6 +8,7 @@ import { Ring } from '@/components/Ring';
 import { Toast, useToast } from '@/components/Sheet';
 import { api, remember, shareLink, subscribeLive } from '@/components/client';
 import { dedicationLine } from '@/lib/dedication';
+import { freeListMessage } from '@/lib/share';
 import { site } from '@/lib/site';
 import { DEDICATION_LABELS, type AdminState, type AdminUnit, type DedicationKind } from '@/lib/types';
 
@@ -108,6 +109,11 @@ export function ManageView({ slug, initialKey, created: justCreated }: { slug: s
           <div className="section-label"><span>שיתוף</span></div>
           <div className="list">
             <button className="list-row" onClick={() => shareLink(publicUrl, shareText)}><ShareIcon /><span className="grow title">שיתוף הקישור</span></button>
+            {counts.free > 0 && (
+              <button className="list-row" onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(freeListMessage(origin, state))}`, '_blank', 'noopener')}>
+                <span style={{ width: 22 }} /><span className="grow"><span className="title" style={{ display: 'block' }}>רשימת הפנויים לוואטסאפ</span><span className="sub">קישור לכל פרק: לוחצים ולוקחים</span></span>
+              </button>
+            )}
             <button className="list-row" onClick={() => shareLink(publicUrl, statusMessage(state))}><span style={{ width: 22 }} /><span className="grow title">שליחת עדכון מצב</span></button>
             <button className="list-row" onClick={() => copy(publicUrl, 'הקישור הועתק')}><CopyIcon /><span className="grow title">העתקת הקישור</span></button>
           </div>

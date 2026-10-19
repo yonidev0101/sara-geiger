@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { TopBar } from '@/components/AppShell';
 import { CheckIcon, ChevronIcon } from '@/components/Icons';
 import { LogoMark } from '@/components/Logo';
+import { PrayerAfter, PrayerBefore } from '@/components/Prayers';
 import { ReaderSettings, ReaderVerses, useReaderPrefs } from '@/components/ReaderText';
 import { api, getDeviceId } from '@/components/client';
 import { segmentsOf } from '@/lib/divisions';
@@ -94,7 +95,9 @@ export function ReaderView({ unit, part, verses, credit }: { unit: ReaderUnit; p
           </div>
         </div>
 
+        <PrayerBefore dedication={unit.dedication} />
         <ReaderVerses verses={verses} prefs={prefs} />
+        <PrayerAfter dedication={unit.dedication} />
 
         {done ? (
           <div className="reader-end">

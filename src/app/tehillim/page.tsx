@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AppFrame } from '@/components/AppShell';
+import { ChevronIcon } from '@/components/Icons';
 import { hebNum } from '@/lib/hebrew';
 
 export const metadata: Metadata = { title: 'ספר תהילים', description: 'כל 150 פרקי תהילים לקריאה נוחה.' };
@@ -16,7 +17,15 @@ const BOOKS: [string, number, number][] = [
 export default function TehillimIndex() {
   return (
     <AppFrame title="ספר תהילים">
-      <p className="lead" style={{ textAlign: 'center', margin: '8px 0 4px' }}>בחרו פרק לקריאה חופשית</p>
+      <Link href="/tehillim/letters" className="feature-card">
+        <span className="badge-num">קי״ט</span>
+        <span className="grow">
+          <span style={{ display: 'block', fontWeight: 700 }}>פרק קי״ט לפי אותיות השם</span>
+          <span className="muted" style={{ fontSize: 13 }}>הפסוקים של אותיות השם ואותיות נשמה, כמנהג ביארצייט</span>
+        </span>
+        <span className="chev" style={{ color: 'var(--line-strong)' }}><ChevronIcon /></span>
+      </Link>
+      <p className="lead" style={{ textAlign: 'center', margin: '18px 0 4px' }}>או בחרו פרק לקריאה חופשית</p>
       {BOOKS.map(([name, a, b]) => (
         <div key={name}>
           <div className="group-title">

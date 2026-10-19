@@ -4,13 +4,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppFrame } from '@/components/AppShell';
-import { CheckIcon, InfoIcon, SettingsIcon, ShareIcon } from '@/components/Icons';
+import { CheckIcon, CopyIcon, InfoIcon, ListIcon, SettingsIcon, ShareIcon } from '@/components/Icons';
 import { LogoMark } from '@/components/Logo';
 import { Ring } from '@/components/Ring';
 import { Sheet, Toast, useToast } from '@/components/Sheet';
 import { api, ApiError, getDeviceId, remember, shareLink, subscribeLive, timeAgo } from '@/components/client';
 import { hebNum, hebrewDate } from '@/lib/hebrew';
 import { dedicationLine, dedicationParts } from '@/lib/dedication';
+import { firstName } from '@/lib/letters';
+import { freeListMessage } from '@/lib/share';
 import { site } from '@/lib/site';
 import { DEDICATION_LABELS, type CampaignState, type DedicationKind, type PublicUnit } from '@/lib/types';
 import { bookHref, groupMine, partsDone, unitHref } from '@/lib/units';
@@ -23,7 +25,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
   const [selected, setSelected] = useState<number[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [copy, setCopy] = useState(1);
-  const [sheet, setSheet] = useState<null | 'take' | 'auto' | 'info'>(null);
+  const [sheet, setSheet] = useState<null | 'take' | 'auto' | 'info' | 'share'>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const toast = useToast();
@@ -120,7 +122,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
       actions={
         <>
           <button className="icon-btn" onClick={() => setSheet('info')} aria-label="פרטי החלוקה"><InfoIcon /></button>
-          <button className="icon-btn" onClick={share} aria-label="שיתוף"><ShareIcon /></button>
+          <button className="icon-btn" onClick={() => setSheet('share')} aria-label="שיתוף"><ShareIcon /></button>
         </>
       }
     >
@@ -257,6 +259,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
           maxFree={counts.free} one={one} many={many} onClose={() => setSheet(null)} onDone={afterTake}
           onConflict={async (msg) => { setSheet(null); toast.show(msg); await refresh(); }} />
       )}
+      {sheet === 'share' && <ShareSheet state={state} onLink={() => { setSheet(null); void share(); }} onDone={(msg) => { setSheet(null); toast.show(msg); }} onClose={() => setSheet(null)} />}
       {sheet === 'info' && <InfoSheet state={state} slug={slug} isAdmin={isAdmin} one={one} many={many} onClose={() => setSheet(null)} />}
       {campaign.dedication && <p className="memorial-note">{site.brandName} · לעילוי נשמת {site.honoree} ז״ל</p>}
       {celebrate && <Celebration dedication={dedicationLine(campaign.dedication)} books={campaign.completedRounds} onClose={() => setCelebrate(false)} onShare={share} />}
@@ -468,6 +471,11 @@ function InfoSheet({ state, slug, isAdmin, one, many, onClose }: { state: Campai
           </div>
         )}
       </div>
+      {campaign.dedication?.kind !== 'hatzlacha' && (
+        <Link href={`/tehillim/letters?name=${encodeURIComponent(firstName(campaign.dedication?.name ?? site.honoree))}&for=${slug}${campaign.dedication?.kind === 'refua' ? '&n=0' : ''}`} className="btn btn-secondary btn-block">
+          פרק קי״ט לפי אותיות {firstName(campaign.dedication?.name ?? site.honoree)}
+        </Link>
+      )}
       {isAdmin && (
         <Link href={`/c/${slug}/manage`} className="btn btn-secondary btn-block"><SettingsIcon /> ניהול החלוקה</Link>
       )}
@@ -498,4 +506,37 @@ function summarize(units: PublicUnit[]): string {
     byGroup.set(key, (byGroup.get(key) ?? 0) + 1);
   }
   return [...byGroup.entries()].map(([g, n]) => `${g} (${n})`).join(' · ');
+}
+
+function ShareSheet({ state, onLink, onDone, onClose }: {
+  state: CampaignState;
+  onLink: () => void;
+  onDone: (msg: string) => void;
+  onClose: () => void;
+}) {
+  const message = () => freeListMessage(window.location.origin, state);
+  const free = state.counts.free;
+  return (
+    <Sheet label="שיתוף" onClose={onClose}>
+      <h2 className="sheet-title">שיתוף החלוקה</h2>
+      <div className="list">
+        <button className="list-row" onClick={onLink}>
+          <ShareIcon />
+          <span className="grow"><span className="title" style={{ display: 'block' }}>קישור לחלוקה</span><span className="sub">כולם בוחרים מהלוח</span></span>
+        </button>
+        {free > 0 && (
+          <button className="list-row" onClick={() => { onClose(); window.open(`https://wa.me/?text=${encodeURIComponent(message())}`, '_blank', 'noopener'); }}>
+            <ListIcon />
+            <span className="grow"><span className="title" style={{ display: 'block' }}>רשימת הפנויים לוואטסאפ</span><span className="sub">קישור לכל פרק: לוחצים ולוקחים</span></span>
+          </button>
+        )}
+        {free > 0 && (
+          <button className="list-row" onClick={() => navigator.clipboard?.writeText(message()).then(() => onDone('הרשימה הועתקה. אפשר להדביק בקבוצה.'))}>
+            <CopyIcon />
+            <span className="grow"><span className="title" style={{ display: 'block' }}>העתקת הרשימה</span><span className="sub">להדבקה בקבוצה או בכל מקום</span></span>
+          </button>
+        )}
+      </div>
+    </Sheet>
+  );
 }

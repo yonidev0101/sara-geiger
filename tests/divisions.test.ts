@@ -64,3 +64,15 @@ test('chapters taken from one book are grouped into a single entry', async () =>
   const multi = groupMine([u(5, 'ימי החודש', 1, 9), u(6, 'ימי החודש', 1, 6)], () => false);
   assert.ok(multi.every((e) => e.type === 'unit'));
 });
+
+test('psalm 119 sections follow the letters of a name', async () => {
+  const { firstName, nameLetters, sectionRef } = await import('../src/lib/letters.ts');
+  assert.equal(firstName('שרה בת צבי'), 'שרה');
+  assert.equal(firstName('משה בן רחל'), 'משה');
+  assert.deepEqual(nameLetters('שרה'), ['ש', 'ר', 'ה']);
+  assert.deepEqual(nameLetters('יעקב צבי'), ['י', 'ע', 'ק', 'ב', 'צ', 'ב', 'י']);
+  assert.deepEqual(nameLetters('נחום'), ['נ', 'ח', 'ו', 'מ']);
+  assert.equal(sectionRef('א'), 'Psalms.119.1-8');
+  assert.equal(sectionRef('ש'), 'Psalms.119.161-168');
+  assert.equal(sectionRef('ת'), 'Psalms.119.169-176');
+});
