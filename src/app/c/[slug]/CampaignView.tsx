@@ -30,6 +30,13 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
   const [isAdmin, setIsAdmin] = useState(false);
   const toast = useToast();
   const fetching = useRef<Promise<void> | null>(null);
+  // Live updates must never change a selection silently: the refresh reads these through refs.
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const sheetRef = useRef(sheet);
+  sheetRef.current = sheet;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   const refresh = useCallback(async () => {
     if (fetching.current) return fetching.current;
@@ -37,7 +44,16 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
       try {
         const next = await api<CampaignState>(`/api/c/${slug}?device=${getDeviceId()}`);
         setState(next);
-        setSelected((sel) => sel.filter((id) => next.units.find((u) => u.id === id)?.status === 'free'));
+        // While the confirm sheet is open its list stays as the person saw it; the server
+        // refuses the whole take if any of it is gone, and the sheet then says which.
+        if (sheetRef.current !== 'take') {
+          const lost = next.units.filter((u) => selectedRef.current.includes(u.id) && u.status !== 'free');
+          if (lost.length) {
+            const ids = lost.map((u) => u.id);
+            setSelected((sel) => sel.filter((id) => !ids.includes(id)));
+            toastRef.current.show(`נלקח בינתיים על ידי מישהו אחר: ${lost.map(unitName).join(', ')}`);
+          }
+        }
       } catch {
         // keep the last state; the next event will retry
       } finally {
@@ -257,7 +273,7 @@ export function CampaignView({ slug, initial }: { slug: string; initial: Campaig
       {(sheet === 'take' || sheet === 'auto') && (
         <TakeSheet slug={slug} units={sheet === 'take' ? units.filter((u) => selected.includes(u.id)) : undefined}
           maxFree={counts.free} one={one} many={many} onClose={() => setSheet(null)} onDone={afterTake}
-          onConflict={async (msg) => { setSheet(null); toast.show(msg); await refresh(); }} />
+          onConflict={async (msg) => { setSheet(null); setSelected([]); toast.show(msg); await refresh(); }} />
       )}
       {sheet === 'share' && <ShareSheet state={state} onLink={() => { setSheet(null); void share(); }} onDone={(msg) => { setSheet(null); toast.show(msg); }} onClose={() => setSheet(null)} />}
       {sheet === 'info' && <InfoSheet state={state} slug={slug} isAdmin={isAdmin} one={one} many={many} onClose={() => setSheet(null)} />}
@@ -329,7 +345,12 @@ function PartRow({ u, selected, onClick }: { u: PublicUnit; selected: boolean; o
   );
 }
 
-function TakeSheet({ slug, units, maxFree, one, many, onClose, onDone, onConflict }: {
+/** Short name of a unit for messages, e.g. "קי״ט נ׳" or "כ״ג". */
+function unitName(u: PublicUnit): string {
+  return u.sublabel ? `${u.sublabel} ${u.label}` : u.label;
+}
+
+function TakeSheet({ slug, units: initialUnits, maxFree, one, many, onClose, onDone, onConflict }: {
   slug: string;
   units?: PublicUnit[];
   maxFree: number;
@@ -339,6 +360,9 @@ function TakeSheet({ slug, units, maxFree, one, many, onClose, onDone, onConflic
   onDone: (ids: number[]) => void;
   onConflict: (msg: string) => void;
 }) {
+  // A copy taken when the sheet opens: live updates never shorten it behind the person's back.
+  const [units, setUnits] = useState(initialUnits);
+  const [notice, setNotice] = useState('');
   const auto = !units;
   const [name, setName] = useState('');
   const [count, setCount] = useState(Math.min(auto && many === 'פרקים' ? 5 : 1, maxFree) || 1);
@@ -372,6 +396,16 @@ function TakeSheet({ slug, units, maxFree, one, many, onClose, onDone, onConflic
       onDone(res.taken);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
+        const lostIds = err.data.conflictIds as number[] | undefined;
+        const rest = units && lostIds ? units.filter((u) => !lostIds.includes(u.id)) : [];
+        if (units && lostIds && rest.length) {
+          // Nothing was taken. Show what is gone and let the person confirm the rest themselves.
+          const gone = units.filter((u) => lostIds.includes(u.id)).map(unitName).join(', ');
+          setUnits(rest);
+          setNotice(`${gone} נלקח/ו בינתיים על ידי מישהו אחר. אפשר לאשר את השאר.`);
+          setBusy(false);
+          return;
+        }
         const conflicts = (err.data.conflicts as string[] | undefined)?.join(', ');
         onConflict(conflicts ? `מישהו הקדים אותך: ${conflicts}` : err.message);
       } else {
@@ -424,8 +458,11 @@ function TakeSheet({ slug, units, maxFree, one, many, onClose, onDone, onConflic
           <button type="button" className="text-btn" style={{ alignSelf: 'flex-start' }} onClick={() => setShowDedication(true)}>+ להוסיף שם נוסף</button>
         )}
 
+        {notice && <div className="banner" role="alert">{notice}</div>}
         {error && <div className="error" role="alert">{error}</div>}
-        <button className="btn btn-block" disabled={busy || !name.trim() || n === 0}>{busy ? 'שומרים…' : 'אישור'}</button>
+        <button className="btn btn-block" disabled={busy || !name.trim() || n === 0}>
+          {busy ? 'שומרים…' : notice ? `לקחת את ${n === 1 ? `ה${one}` : `${n} ה${many}`} שנשארו` : 'אישור'}
+        </button>
       </form>
     </Sheet>
   );

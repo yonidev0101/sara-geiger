@@ -363,7 +363,10 @@ export async function takeUnits(slug: string, input: TakeInput): Promise<{ taken
       if (locked.rowCount !== ids.length) throw new UserError('חלק מהפרקים לא נמצאו');
       const conflicts = locked.rows.filter((r) => r.status !== 'free');
       if (conflicts.length) {
-        throw new UserError('חלק מהפרקים נלקחו בינתיים', 409, { conflicts: conflicts.map((r) => r.label) });
+        throw new UserError('חלק מהפרקים נלקחו בינתיים', 409, {
+          conflicts: conflicts.map((r) => r.label),
+          conflictIds: conflicts.map((r) => r.id as number),
+        });
       }
     } else {
       const count = Number(input.count);
