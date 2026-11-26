@@ -12,7 +12,8 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#F7F2E8',
+    // Same navy as the opening animation, so the phone's own launch screen flows into it.
+    background_color: '#1C2638',
     theme_color: '#F7F2E8',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },

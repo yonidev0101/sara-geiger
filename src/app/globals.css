@@ -114,6 +114,8 @@ button { cursor: pointer; touch-action: manipulation; }
 }
 .btn:active { transform: scale(.98); }
 .btn:disabled { opacity: .4; cursor: default; transform: none; }
+/* Floating buttons sit over the grid: a translucent disabled button lets the tiles show through, so use a solid color. */
+.action-dock .btn:not(.btn-secondary):disabled { opacity: 1; background: #9FA0A2; border-color: #9FA0A2; color: var(--parchment); }
 .btn svg { width: 20px; height: 20px; }
 .btn-secondary { background: var(--paper); color: var(--ink); border-color: var(--line-strong); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-soft); font-weight: 500; }
@@ -378,3 +380,32 @@ details.more summary::-webkit-details-marker { display: none; }
 .letters-divider::before, .letters-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .feature-card { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 18px; background: var(--paper); border: 1px solid var(--line); box-shadow: var(--shadow); margin: 8px 0 4px; }
 .feature-card .badge-num { font-family: var(--serif); font-size: 20px; min-width: 52px; height: 52px; border-radius: 14px; background: var(--ink); color: var(--parchment); display: flex; align-items: center; justify-content: center; }
+
+/* ---------------- Opening animation (see components/Splash.tsx) ---------------- */
+#splash {
+  position: fixed; inset: 0; z-index: 1000; background: var(--ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  transition: opacity .45s ease;
+}
+html.splash-out #splash { opacity: 0; pointer-events: none; }
+html.splash-off #splash { display: none; }
+#splash svg { width: min(44vw, 190px); overflow: visible; }
+#splash .s-bar { opacity: 0; transform-box: fill-box; transform-origin: center; animation: s-rise .55s cubic-bezier(.2, .8, .2, 1) forwards; }
+#splash .s-bar:nth-child(5) { animation-delay: .15s; }
+#splash .s-bar:nth-child(4) { animation-delay: .3s; }
+#splash .s-bar:nth-child(3) { animation-delay: .45s; }
+#splash .s-bar:nth-child(2) { animation-delay: .6s; }
+#splash .s-bar:nth-child(1) { animation-delay: .75s; }
+#splash .s-flame { transform: scale(0); transform-box: fill-box; transform-origin: 50% 100%;
+  animation: s-ignite .7s cubic-bezier(.3, 1.5, .5, 1) 1.45s forwards, s-flicker 2.4s ease-in-out 2.15s infinite; }
+#splash .s-glow { opacity: 0; transform-box: fill-box; transform-origin: 50% 70%; animation: s-glow 1s ease-out 1.5s forwards; }
+#splash .s-name { font-family: var(--serif); font-size: 30px; font-weight: 500; color: var(--parchment); opacity: 0; animation: s-fade .6s ease 1.9s forwards; }
+#splash .s-sub { font-size: 14px; color: #C9B98F; margin-top: -10px; opacity: 0; animation: s-fade .6s ease 2.05s forwards; }
+@keyframes s-rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+@keyframes s-ignite { 0% { transform: scale(0); } 60% { transform: scale(1.12, 1.18); } 100% { transform: scale(1); } }
+@keyframes s-flicker { 0%, 100% { transform: scale(1) rotate(0); } 30% { transform: scale(.97, 1.04) rotate(-1.5deg); } 60% { transform: scale(1.02, .97) rotate(1deg); } }
+@keyframes s-glow { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes s-fade { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  #splash * { animation: none !important; opacity: 1 !important; transform: none !important; }
+}

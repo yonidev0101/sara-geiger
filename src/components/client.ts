@@ -1,16 +1,32 @@
 'use client';
 
+function newDeviceId(): string {
+  let id = '';
+  try {
+    id = crypto.randomUUID?.() ?? '';
+  } catch {
+    // older browsers: fall through
+  }
+  if (!id) id = `${Date.now()}${Math.random()}${Math.random()}`;
+  return id.replace(/[^A-Za-z0-9]/g, '').slice(0, 32);
+}
+
+// Used when the browser refuses storage (some in-app browsers, private mode). It must be
+// random per person: a shared fixed value made everyone in that situation "the same phone".
+let memoryDeviceId: string | null = null;
+
 export function getDeviceId(): string {
   const KEY = 'mizmor.device';
   try {
     let id = localStorage.getItem(KEY);
     if (!id) {
-      id = (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).replace(/[^A-Za-z0-9]/g, '').slice(0, 32);
+      id = newDeviceId();
       localStorage.setItem(KEY, id);
     }
     return id;
   } catch {
-    return 'anonymous-device';
+    if (!memoryDeviceId) memoryDeviceId = newDeviceId();
+    return memoryDeviceId;
   }
 }
 

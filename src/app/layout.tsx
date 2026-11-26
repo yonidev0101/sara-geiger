@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { Splash } from '@/components/Splash';
 import { SwRegister } from '@/components/SwRegister';
 import { site } from '@/lib/site';
 import './globals.css';
@@ -37,7 +38,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="he" dir="rtl">
+    <html lang="he" dir="rtl" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <Splash />
         {children}
         <SwRegister />
       </body>
